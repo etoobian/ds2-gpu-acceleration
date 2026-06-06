@@ -1,0 +1,33 @@
+================================================================================
+DS2 GPU Acceleration Project: Environment Check
+================================================================================
+Report mode: brief
+
+System Information
+--------------------------------------------------------------------------------
+Python executable: python.exe
+Python version:    3.11.14 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 18:30:03) [MSC v.1929 64 bit (AMD64)]
+Platform:          Windows-10-10.0.26200-SP0
+Processor:         Intel64 Family 6 Model 198 Stepping 2, GenuineIntel
+
+PyTorch Information
+--------------------------------------------------------------------------------
+PyTorch version:          2.11.0+cu128
+CUDA available:           True
+CUDA version in PyTorch:  12.8
+cuDNN version:            91900
+
+CUDA Device Information
+--------------------------------------------------------------------------------
+CUDA device count: 1
+
+Device 0
+  Name:                     NVIDIA GeForce RTX 5090 Laptop GPU
+  Total memory:             23.89 GB
+  Multiprocessor count:     82
+  Compute capability:       12.0
+
+nvidia-smi
+--------------------------------------------------------------------------------
+name, driver_version, memory.total [MiB], temperature.gpu, power.limit [W]
+NVIDIA GeForce RTX 5090 Laptop GPU, 592.01, 24463 MiB, 43, [N/A]

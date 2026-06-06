@@ -13,3 +13,4 @@ Thumbs.db
 results/**/*.pt
 results/**/*.pth
 results/**/*.pkl
+results/**/*_full.txt
