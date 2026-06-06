@@ -130,48 +130,48 @@ ds2-gpu-acceleration/
 ├── .gitignore
 │
 ├── docs/
-│   ├── project_overview.md
-│   ├── experiment_plan.md
-│   ├── orca_notes.md
+│   ├── project_overview.md              # Project motivation and technical background
+│   ├── experiment_plan.md               # Experiment design and timing methodology
+│   ├── orca_notes.md                    # PSU ORCA cluster workflow and run notes
 │   └── proposal/
 │       ├── Toobian_DS2_ProjectProposal.pdf
 │       └── Toobian_DS2_Supplemental_Info_ProjectProposal.pdf
 │
 ├── src/
-│   ├── check_environment.py
-│   ├── timing_utils.py
-│   ├── benchmark_matmul.py
-│   ├── benchmark_batch_size.py
-│   ├── benchmark_transfer.py
-│   ├── benchmark_vectorization.py
-│   ├── benchmark_dataparallel.py
-│   ├── models.py
-│   └── plot_results.py
+│   ├── check_environment.py             # Local/ORCA environment and GPU checks
+│   ├── timing_utils.py                  # Shared timing helpers
+│   ├── benchmark_matmul.py              # Experiment 1: Matrix multiplication sweep
+│   ├── benchmark_batch_size.py          # Experiment 2: Batch size and throughput
+│   ├── benchmark_transfer.py            # Experiment 3: CPU-GPU transfer overhead
+│   ├── benchmark_vectorization.py       # Experiment 4: Vectorized tensors vs Python loops
+│   ├── benchmark_dataparallel.py        # Experiment 5: Multi-GPU/DataParallel extension
+│   ├── models.py                        # Small neural-network models used in benchmarks
+│   └── plot_results.py                  # Generate figures from benchmark CSV files
 │
 ├── notebooks/
-│   ├── 00_environment_check.ipynb
-│   ├── 01_bonus_batch_size_reference.ipynb
-│   └── 02_results_preview.ipynb
+│   ├── 00_environment_check.ipynb       # Notebook version of environment checks
+│   ├── 01_bonus_batch_size_ref.ipynb    # Reference from prior batch-size runtime/accuracy experiment
+│   └── 02_results_preview.ipynb         # Preview and inspection of benchmark results
 │
 ├── scripts/
-│   ├── run_local_all.ps1
-│   ├── orca_environment_job.sh
-│   ├── orca_matmul_job.sh
-│   ├── orca_batch_size_job.sh
-│   ├── orca_transfer_job.sh
-│   ├── orca_vectorization_job.sh
-│   └── orca_dataparallel_job.sh
+│   ├── run_local_all.ps1                # Run local benchmarks
+│   ├── orca_environment_job.sh          # ORCA environment-check Slurm job
+│   ├── orca_matmul_job.sh               # ORCA job for Experiment 1
+│   ├── orca_batch_size_job.sh           # ORCA job for Experiment 2
+│   ├── orca_transfer_job.sh             # ORCA job for Experiment 3
+│   ├── orca_vectorization_job.sh        # ORCA job for Experiment 4
+│   └── orca_dataparallel_job.sh         # ORCA job for Experiment 5
 │
 ├── results/
-│   ├── local/
-│   └── orca/
+│   ├── local/                           # Local CPU/GPU benchmark outputs
+│   └── orca/                            # ORCA benchmark outputs and job logs
 │
-├── figures/
+├── figures/                             # Generated plots for the presentation
 │
 └── presentation/
-    ├── presentation_outline.md
-    ├── speaker_notes.md
-    └── final_slides.pptx
+    ├── presentation_outline.md          # Working outline for the presentation
+    ├── speaker_notes.md                 # Speaker notes / presentation script
+    └── final_slides.pptx                # Final slide deck
 ```
 
 ## Documentation
