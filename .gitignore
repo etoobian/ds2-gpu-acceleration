@@ -13,7 +13,6 @@ Thumbs.db
 results/**/*.pt
 results/**/*.pth
 results/**/*.pkl
-results/**/*_full.txt
 results/**/*.out
 results/**/*.err
 results/**/*_full.txt
