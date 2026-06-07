@@ -1,8 +1,8 @@
 """
 Timing utilities for the DS2 GPU acceleration project.
 
-The key issue is that CUDA operations are asynchronous. When timing GPU code,
-we need to synchronize before stopping the timer so that the measured time
+CUDA operations can be asynchronous. When timing GPU code, we need to
+synchronize before and after the timed operation so that the measured time
 actually includes the GPU work.
 """
 
@@ -10,13 +10,15 @@ from __future__ import annotations
 
 import statistics
 import time
-from collections.abc import Callable
-from typing import Any
+from typing import Any, Callable, Dict, Optional, Union
 
 import torch
 
 
-def synchronize_if_cuda(device: torch.device | str | None = None) -> None:
+DeviceLike = Optional[Union[torch.device, str]]
+
+
+def synchronize_if_cuda(device: DeviceLike = None) -> None:
     """
     Synchronize CUDA operations if CUDA is being used.
 
@@ -24,6 +26,7 @@ def synchronize_if_cuda(device: torch.device | str | None = None) -> None:
     ----------
     device:
         Device being timed. If None, synchronize whenever CUDA is available.
+        If a CPU device is passed, no synchronization is performed.
     """
     if not torch.cuda.is_available():
         return
@@ -41,17 +44,17 @@ def synchronize_if_cuda(device: torch.device | str | None = None) -> None:
 def time_function(
     fn: Callable[[], Any],
     *,
-    device: torch.device | str | None = None,
+    device: DeviceLike = None,
     warmup: int = 10,
     repeats: int = 50,
-) -> dict[str, float]:
+) -> Dict[str, float]:
     """
     Time a function using warmup iterations and repeated measurements.
 
     Parameters
     ----------
     fn:
-        Function with no required arguments. The function should perform the
+        Function with no required arguments. This function should perform the
         operation being timed.
 
     device:
@@ -66,12 +69,13 @@ def time_function(
 
     Returns
     -------
-    dict[str, float]
+    Dict[str, float]
         Dictionary containing mean, standard deviation, min, max, and repeats.
         Times are reported in seconds.
     """
     if warmup < 0:
         raise ValueError("warmup must be nonnegative")
+
     if repeats <= 0:
         raise ValueError("repeats must be positive")
 
@@ -80,12 +84,14 @@ def time_function(
 
     synchronize_if_cuda(device)
 
-    times: list[float] = []
+    times = []
 
     for _ in range(repeats):
         synchronize_if_cuda(device)
         start = time.perf_counter()
+
         fn()
+
         synchronize_if_cuda(device)
         end = time.perf_counter()
 
@@ -104,13 +110,24 @@ def time_function(
 
 
 def format_seconds(seconds: float) -> str:
-    """Format seconds using convenient units."""
+    """
+    Format seconds using convenient units.
+
+    Examples
+    --------
+    0.000001 -> microseconds
+    0.001    -> milliseconds
+    1.0      -> seconds
+    """
     if seconds < 1e-6:
         return f"{seconds * 1e9:.3f} ns"
+
     if seconds < 1e-3:
         return f"{seconds * 1e6:.3f} us"
+
     if seconds < 1:
         return f"{seconds * 1e3:.3f} ms"
+
     return f"{seconds:.3f} s"
 
 
