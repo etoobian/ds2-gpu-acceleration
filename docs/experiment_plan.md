@@ -4,172 +4,321 @@ The experiments demonstrate principles rather than universal hardware benchmarks
 
 The project compares:
 
-- Local CPU
-- Local laptop GPU
-- PSU ORCA cluster GPU
+* Local CPU
+* Local laptop GPU
+* PSU ORCA CPU/GPU resources
+* ORCA multi-GPU `nn.DataParallel`
+
+## Experiment Summary
+
+| Experiment                            | Main question                                                                             |
+| ------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Matrix multiplication size sweep      | At what problem size does GPU parallel throughput outweigh overhead?                      |
+| CIFAR-10 batch size and throughput    | How does batch size affect runtime, throughput, and accuracy in a real CNN training loop? |
+| CPU-GPU transfer overhead             | How much does repeated CPU-GPU memory movement cost?                                      |
+| Vectorized operations vs Python loops | Why does tensor-level code matter for GPU acceleration?                                   |
+| Single GPU vs `nn.DataParallel`       | When does splitting a batch across multiple GPUs help?                                    |
 
 ## Experiment 1: Matrix Multiplication Size Sweep
 
 ### Purpose
 
-This experiment tests when GPU parallel throughput begins to outweigh overhead.
+Show when GPU parallel throughput begins to outweigh overhead.
 
 ### Computation
 
 For increasing matrix sizes,
 
-$$A, B \in \mathbb{R}^{n \times n}$$
+$$
+A, B \in \mathbb{R}^{n \times n},
+\qquad
+C = AB.
+$$
 
-and
+The experiment measures matrix multiplication runtime on CPU and CUDA devices.
 
-$$C = AB,$$
-
-the experiment measures the runtime of matrix multiplication on different devices.
-
-### Matrix sizes
+### Final settings
 
 ```python
 sizes = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
+warmup = 10
+repeats = 30
+dtype = "float32"
 ```
 
-### Expected behavior
+### Devices/environments
 
-For small matrices, the CPU may be competitive or faster because GPU overhead dominates. For larger matrices, the GPU should become faster because the computation exposes enough parallel work.
+* Local CPU
+* Local GPU
+* ORCA CPU
+* ORCA GPU
 
-### Expected outputs
+### Output files
 
-- Runtime versus matrix size
-- GPU speedup versus matrix size
-- Comparison of local CPU, local GPU, and ORCA GPU results
+```text
+results/local/matmul_local.csv
+results/orca/matmul_orca.csv
+results/matmul_summary.csv
 
-## Experiment 2: Batch Size and Neural-Network Throughput
+figures/matmul_runtime.png
+figures/matmul_speedup.png
+```
+
+### Main takeaway
+
+For small matrices, CPU runtime can be competitive because overhead dominates. For large matrices, GPU runtime becomes much faster because the computation exposes enough parallel work.
+
+## Experiment 2: CIFAR-10 Batch Size and Neural-Network Throughput
 
 ### Purpose
 
-This experiment tests how batch size affects runtime, throughput, and GPU utilization for neural-network computation.
+Show how batch size affects training runtime, training throughput, and accuracy in a recognizable deep-learning workload.
 
 ### Computation
 
-A small neural network is run using several batch sizes. The experiment records:
+The experiment trains `ProjectCIFAR10CNN` on CIFAR-10 using several batch sizes. The model has 2,193,226 trainable parameters.
 
-- Forward pass runtime
-- Forward plus backward pass runtime
-- Examples per second
-- Final training accuracy
-- Final test accuracy
-- GPU memory use, when available
-
-### Batch sizes
+### Final settings
 
 ```python
-batch_sizes = [1, 8, 32, 128, 512, 1024, 2048]
+batch_sizes = [20, 50, 100, 200, 500, 1000]
+epochs = 10
+learning_rate = 0.01
+optimizer = "SGD"
+seed = 0
+num_workers = 0
 ```
 
-### Accuracy note
+### Devices/environments
 
-The primary purpose of this experiment is computational, to study throughput and GPU utilization. Accuracy may be included as a secondary measurement because batch size can also affect optimization and generalization. However, this project does not treat batch size primarily as a hyperparameter-tuning study.
+* Local CPU
+* Local GPU
+* ORCA CPU
+* ORCA GPU
 
-### Expected outputs
+### Timing definition
 
-- Batch size versus runtime
-- Batch size versus examples per second
-- Batch size versus final accuracy, when training accuracy is included
-- Local CPU/local GPU comparison
-- ORCA GPU comparison
+Training runtime measures the actual training loop:
+
+* Data loading
+* Device transfer
+* Forward pass
+* Loss computation
+* Backward pass
+* Optimizer step
+
+Final train accuracy and final test accuracy are evaluated separately after training, so accuracy evaluation is not included in training runtime.
+
+### Output files
+
+```text
+results/local/batch_size_local_cpu.csv
+results/local/batch_size_local_gpu.csv
+results/orca/batch_size_orca_cpu.csv
+results/orca/batch_size_orca_gpu.csv
+results/batch_size_summary.csv
+
+figures/batch_size_train_runtime.png
+figures/batch_size_train_throughput.png
+figures/batch_size_test_accuracy.png
+```
+
+### Main takeaway
+
+Larger batch sizes improved training runtime and throughput, especially on GPUs. However, accuracy decreased for larger batches in this fixed-epoch, fixed-learning-rate setup because larger batches receive fewer optimizer updates per epoch.
 
 ## Experiment 3: CPU-GPU Transfer Overhead
 
 ### Purpose
 
-This experiment demonstrates why memory movement matters.
+Show that GPU acceleration can be reduced or eliminated when data is moved repeatedly between CPU and GPU.
 
-### Comparison
+### Computation
 
-The experiment compares strategies such as:
+The experiment compares several cases, with the main contrast between:
 
-1. Move data to the GPU once and perform many operations.
-2. Move data from CPU to GPU inside the loop.
-3. Move results from GPU to CPU inside the loop.
+```python
+# Bad pattern
+for _ in range(repeats):
+    y_gpu = x_cpu.to("cuda")
+    y_gpu = y_gpu * 1.000001 + 0.000001
+    y_cpu = y_gpu.cpu()
+```
 
-### Expected behavior
+and
 
-Moving data once and reusing it should be much faster than repeatedly transferring data inside a timed loop. Repeated CPU-GPU transfers can dominate runtime and eliminate the expected GPU speedup.
+```python
+# Good pattern
+y_gpu = x_cpu.to("cuda")
 
-### Expected outputs
+for _ in range(repeats):
+    y_gpu = y_gpu * 1.000001 + 0.000001
 
-- Runtime by transfer strategy
-- Explanation of why CPU-GPU memory movement can be a bottleneck
+y_cpu = y_gpu.cpu()
+```
+
+### Final settings
+
+```python
+sizes = [10000, 100000, 1000000, 10000000]
+repeats = 50
+dtype = "float32"
+```
+
+### Devices/environments
+
+* Local GPU
+* ORCA GPU
+
+### Output files
+
+```text
+results/local/transfer_local.csv
+results/orca/transfer_orca.csv
+results/transfer_summary.csv
+
+figures/transfer_bad_vs_good.png
+```
+
+### Main takeaway
+
+Repeated CPU-GPU transfers were much slower than moving data to the GPU once and keeping it there. For the largest tensor tested, the repeated-transfer pattern was about $26\times$ slower locally and about $31\times$ slower on ORCA.
 
 ## Experiment 4: Vectorized Tensor Operations Versus Python Loops
 
 ### Purpose
 
-This experiment shows why expressing computation as tensor operations matters.
+Show why expressing computation as tensor operations matters.
 
-### Comparison
+### Computation
 
-The experiment compares vectorized tensor code against explicit Python loops.
+The experiment compares two ways of computing the same elementwise operation:
 
-For example, a vectorized operation such as
+$$y_i = 1.000001x_i + 0.000001$$
+
+Vectorized tensor operation:
 
 ```python
-C = A + B
+y = x * 1.000001 + 0.000001
 ```
 
-can be compared with a loop-based implementation.
+Python scalar loop:
 
-### Expected behavior
+```python
+for i in range(x.numel()):
+    y[i] = x[i] * 1.000001 + 0.000001
+```
 
-Vectorized tensor operations can use optimized backend kernels. Python loops often prevent efficient use of GPU parallelism and can make GPU execution ineffective.
+### Final settings
 
-### Expected outputs
+```python
+sizes = [1000, 10000, 100000, 1000000]
+vectorized_repeats = 100
+loop_repeats = 1
+dtype = "float32"
+```
 
-- Vectorized runtime versus loop-based runtime
-- Explanation of why tensor-level programming is important for GPU acceleration
+### Devices/environments
 
-## Experiment 5: Multi-GPU or DataParallel Extension
+* Local CPU
+* Local GPU
+* ORCA CPU
+* ORCA GPU
+
+### Output files
+
+```text
+results/local/vectorization_local_cpu.csv
+results/local/vectorization_local_gpu.csv
+results/orca/vectorization_orca_cpu.csv
+results/orca/vectorization_orca_gpu.csv
+results/vectorization_summary.csv
+
+figures/vectorization_runtime.png
+figures/vectorization_loop_ratio.png
+```
+
+### Main takeaway
+
+The Python scalar loop was thousands to over a million times slower than the vectorized tensor operation, depending on device and tensor size. The arithmetic is essentially the same, but the execution model is very different.
+
+## Experiment 5: Single GPU Versus `nn.DataParallel`
 
 ### Purpose
 
-This experiment demonstrates the basic idea of splitting a batch across multiple GPUs using `nn.DataParallel`. The purpose is to show that multi-GPU computation can increase available parallel throughput, but that scaling is not automatic because communication, synchronization, and data movement introduce overhead.
+Show how `nn.DataParallel` splits a mini-batch across multiple GPUs and when multi-GPU execution becomes faster than single-GPU execution.
 
-### Scope
+### Computation
 
-This is an extension experiment. The project includes the multi-GPU concept, but the main empirical comparison does not depend on successful multi-GPU benchmark results.
+The experiment uses synthetic CIFAR-shaped input batches with `ProjectCIFAR10CNN`.
 
-### Conceptual point
+Input shape:
 
-Multi-GPU computation can split a batch across multiple GPUs, but scaling is not automatic. Communication, synchronization, and data movement can reduce or eliminate the expected speedup.
+$$\texttt{batch\_size} \times 3 \times 32 \times 32$$
+
+
+The timing benchmark compares:
+
+* One ORCA GPU
+* Four ORCA GPUs using `nn.DataParallel`
+
+### Final settings
+
+```python
+batch_sizes = [128, 256, 512, 1024, 2048, 4096]
+warmup = 5
+repeats = 20
+timing_cases = ["forward_only", "forward_backward"]
+max_gpus = 4
+```
+
+### Devices/environments
+
+* ORCA single GPU
+* ORCA four-GPU `nn.DataParallel`
+
+### Output files
+
+```text
+results/orca/dataparallel_orca.csv
+results/dataparallel_summary.csv
+
+figures/dataparallel_runtime.png
+figures/dataparallel_speedup.png
+```
+
+### Main takeaway
+
+For small batches, `nn.DataParallel` was slower because splitting, gathering, and synchronization overhead dominated. For larger batches, `nn.DataParallel` became faster. At batch size 4096, the forward-only speedup was about $2.95\times$ and the forward+backward speedup was about $3.50\times$ on four GPUs.
 
 ## Timing Methodology
 
-GPU timing requires care because CUDA operations can be asynchronous. Timing code should include:
+GPU timing requires care because CUDA operations can be asynchronous. Timing code used:
 
-- Warmup iterations
-- Multiple repeats
-- Mean and standard deviation
-- Consistent dtype
-- Controlled device placement
-- No unnecessary printing inside timed loops
-- Synchronization when timing GPU operations
+* Warmup iterations
+* Repeated timed runs
+* Consistent dtype
+* Controlled device placement
+* No unnecessary printing inside timed loops
+* `torch.cuda.synchronize()` before and after timed CUDA regions
 
-In PyTorch, GPU timing should use `torch.cuda.synchronize()` before stopping the timer.
+A typical CUDA timing pattern is:
 
-## Expected Figures
+```python
+torch.cuda.synchronize()
+start = time.perf_counter()
 
-Expected figures include:
+# CUDA work being timed
+torch.cuda.synchronize()
+end = time.perf_counter()
 
-1. Matrix multiplication runtime versus matrix size
-2. Matrix multiplication speedup versus matrix size
-3. Batch size versus examples per second
-4. Transfer-overhead comparison
-5. Vectorized versus loop-based runtime comparison
-6. Multi-GPU or DataParallel result or conceptual comparison
+elapsed = end - start
+```
 
-## Expected Tables
+## Interpretation Notes
 
-Expected tables include:
+These experiments are case studies, not universal benchmark claims. Results depend on hardware, software versions, driver/CUDA environment, PyTorch version, power settings, scheduler allocation, tensor sizes, batch sizes, and timing methodology.
 
-1. Local and ORCA hardware/software environment table
-2. Experiment summary table
-3. Timing result summary table
+The consistent teaching conclusion is:
+
+> GPU acceleration works best when computations are large, parallel, vectorized, batched, and kept on the GPU.

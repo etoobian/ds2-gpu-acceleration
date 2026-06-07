@@ -2,139 +2,187 @@
 
 This document records the PSU ORCA cluster component of the project.
 
-## Purpose of the ORCA Component
+## Purpose
 
-The ORCA component extends the project beyond local CPU and local GPU timing by adding a research-computing GPU environment.
+The ORCA component extends the project beyond local CPU and local GPU timing by adding a scheduler-based research-computing environment.
 
-The cluster component supports the original project by adding:
+The purpose is to document:
 
-- Cluster GPU comparison
-- Practical example of GPU access through a scheduler
-- Discussion of research-computing workflow
-- Explanation that requesting GPU hardware is separate from writing PyTorch code that correctly uses the GPU
+* How ORCA was used
+* Which Slurm jobs were run
+* Which output files were produced
+* How ORCA results should be interpreted
 
-The goal is not to turn this project into a full ORCA tutorial. The goal is to document the ORCA details that are needed to reproduce and interpret the benchmark results.
+The goal is not to provide a full ORCA tutorial. The goal is to record the project-specific cluster workflow and the information needed to reproduce or interpret the benchmark results.
 
-## ORCA Hardware and Environment Context
+## Key Point
 
-ORCA provides a scheduler-based cluster environment with GPU-enabled compute resources. For this project, the relevant ORCA details are the hardware and software details assigned to each benchmark job.
+A Slurm job can allocate GPU hardware, but PyTorch code must still explicitly use that GPU.
 
-The project records:
+Requesting a GPU from the scheduler is not the same as moving tensors and models to CUDA.
 
-- GPU model assigned to the job
-- GPU memory
-- CPU resources assigned to the job
-- System memory assigned to the job
-- Python version
-- PyTorch version
-- CUDA availability inside PyTorch
-- CUDA version reported by PyTorch
-- CUDA version shown by `nvidia-smi`, when available
-- Slurm job settings
-
-These details matter because cluster benchmark results depend not only on the Python code, but also on the allocated hardware, software environment, scheduler configuration, and current cluster conditions.
-
-## ORCA Benchmarks
-
-The ORCA component includes:
-
-- Environment check
-- Matrix multiplication benchmark
-- Batch-size throughput benchmark
-- Transfer-overhead benchmark
-- Vectorization benchmark
-- Multi-GPU or `nn.DataParallel` extension
-
-The multi-GPU component is treated as an extension. If full multi-GPU benchmark results are not available, the presentation explains the batch-splitting idea conceptually and discusses communication and synchronization overhead.
-
-## ORCA Workflow Used
-
-The ORCA workflow for this project is:
-
-1. Log in to ORCA
-2. Set up or activate a Python environment
-3. Confirm PyTorch and CUDA availability
-4. Submit Slurm jobs requesting GPU resources
-5. Save benchmark outputs to `results/orca/`
-6. Copy ORCA results back into the project repository
-7. Generate or update plots
-8. Compare ORCA results with local CPU and local GPU results
-
-## Expected ORCA Output Files
-
-The ORCA benchmark outputs are saved in `results/orca/`.
-
-Expected ORCA output files include:
-
-- `results/orca/environment_orca.txt`
-- `results/orca/matmul_orca.csv`
-- `results/orca/batch_size_orca.csv`
-- `results/orca/transfer_orca.csv`
-- `results/orca/vectorization_orca.csv`
-- `results/orca/dataparallel_orca.csv`
-
-If the multi-GPU benchmark is handled conceptually rather than empirically, the DataParallel output file may be omitted or replaced by notes in the presentation materials.
-
-## ORCA Job Scripts
-
-The ORCA Slurm scripts are stored in `scripts/`.
-
-Expected ORCA job scripts include:
-
-- `scripts/orca_environment_job.sh`
-- `scripts/orca_matmul_job.sh`
-- `scripts/orca_batch_size_job.sh`
-- `scripts/orca_transfer_job.sh`
-- `scripts/orca_vectorization_job.sh`
-- `scripts/orca_dataparallel_job.sh`
-
-The job scripts request the needed compute resources and run the matching Python benchmark scripts from `src/`.
-
-## Run Records
-
-For each ORCA run, the project records:
-
-- Date of run
-- Slurm job script used
-- Slurm job ID, when available
-- Number of GPUs requested
-- GPU type requested or assigned
-- Number of CPUs requested
-- Memory requested
-- Runtime limit
-- Python benchmark script used
-- Output file name
-- Error/output log file name
-
-These run records are used to interpret differences between local CPU, local GPU, and ORCA GPU results.
-
-## Important Teaching Point
-
-A cluster scheduler can allocate GPU hardware, but PyTorch code must still be written correctly to use that GPU. Requesting a GPU from Slurm is not the same thing as moving a model and tensors to `cuda`.
-
-For this reason, the ORCA component reinforces the same PyTorch device model used in the local experiments:
+For example:
 
 ```python
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+model = model.to(device)
+x = x.to(device)
+y = y.to(device)
 ```
 
-The benchmark code must still place tensors and models on the selected device.
+The ORCA runs reinforce the same device-placement rule used locally. Tensors and models must be on the device where the computation should occur.
+
+## Login Node Versus GPU Job
+
+The ORCA login node can run the project Python environment and import PyTorch, but it does not expose a GPU allocation for computation.
+
+In the project environment, the login-node check showed:
+
+```text
+CUDA available to PyTorch: False
+```
+
+Inside a Slurm job requesting a GPU, PyTorch detected the allocated GPU:
+
+```text
+CUDA available to PyTorch: True
+GPU: NVIDIA L40S
+```
+
+This distinction is important for cluster computing:
+
+* The login node is for setup, editing, and job submission
+* Compute jobs are submitted through Slurm
+* GPU work should be done inside an allocated GPU job
+
+## ORCA Environment Recorded
+
+The ORCA GPU environment check recorded:
+
+```text
+Python: 3.9.25
+PyTorch: 2.5.1+cu121
+CUDA available to PyTorch: True
+PyTorch CUDA version: 12.1
+cuDNN version: 90100
+GPU: NVIDIA L40S
+GPU memory: 44.64 GB
+Compute capability: 8.9
+NVIDIA driver: 610.43.02
+```
+
+The ORCA login-node environment check recorded:
+
+```text
+Python: 3.9.25
+PyTorch: 2.5.1+cu121
+CUDA available to PyTorch: False
+```
+
+The local and ORCA environments are not identical. Therefore, timing results are interpreted as hardware/software case studies rather than universal benchmark claims.
+
+## ORCA Workflow
+
+ORCA benchmark jobs were submitted through Slurm using the scripts in `scripts/`. Each job writes its CSV output to `results/orca/`.
+
+The ORCA results were copied back to the local repository, where `src/analyze_results.py` was used to generate the summary tables and figures.
+
+Slurm `.out` and `.err` files were used for checking job output during development, but they are ignored by Git and are not part of the committed benchmark results.
+
+## ORCA Slurm Scripts
+
+The ORCA Slurm scripts are stored in `scripts/`.
+
+```text
+scripts/orca_environment_job.sh
+scripts/orca_matmul_job.sh
+scripts/orca_batch_size_gpu_job.sh
+scripts/orca_batch_size_cpu_job.sh
+scripts/orca_transfer_job.sh
+scripts/orca_vectorization_gpu_job.sh
+scripts/orca_vectorization_cpu_job.sh
+scripts/orca_dataparallel_job.sh
+```
+
+Each script requests the needed ORCA resources and runs the corresponding Python benchmark script from `src/`.
+
+## ORCA Output Files
+
+ORCA benchmark outputs are stored in `results/orca/`.
+
+```text
+results/orca/environment_orca.txt
+results/orca/environment_orca_login.txt
+results/orca/matmul_orca.csv
+results/orca/batch_size_orca_gpu.csv
+results/orca/batch_size_orca_cpu.csv
+results/orca/transfer_orca.csv
+results/orca/vectorization_orca_gpu.csv
+results/orca/vectorization_orca_cpu.csv
+results/orca/dataparallel_orca.csv
+```
+
+Slurm `.out` and `.err` files were useful during development, especially for checking job status and DataParallel split-demo output, but they are ignored by Git and are not part of the committed results.
+
+## ORCA Benchmarks Run
+
+The ORCA component includes:
+
+| Experiment               | ORCA result file                          |
+| ------------------------ | ----------------------------------------- |
+| Environment check        | `results/orca/environment_orca.txt`       |
+| Matrix multiplication    | `results/orca/matmul_orca.csv`            |
+| CIFAR-10 batch size, GPU | `results/orca/batch_size_orca_gpu.csv`    |
+| CIFAR-10 batch size, CPU | `results/orca/batch_size_orca_cpu.csv`    |
+| Transfer overhead        | `results/orca/transfer_orca.csv`          |
+| Vectorization, GPU       | `results/orca/vectorization_orca_gpu.csv` |
+| Vectorization, CPU       | `results/orca/vectorization_orca_cpu.csv` |
+| DataParallel             | `results/orca/dataparallel_orca.csv`      |
+
+## DataParallel ORCA Run
+
+The multi-GPU extension was run on ORCA using four NVIDIA L40S GPUs.
+
+The DataParallel split demo showed that a batch of 50 was split across four GPUs:
+
+```text
+Dummy.forward (13, 10) cuda:0
+Dummy.forward (13, 10) cuda:1
+Dummy.forward (13, 10) cuda:2
+Dummy.forward (11, 10) cuda:3
+```
+
+Thus,
+
+```text
+50 = 13 + 13 + 13 + 11
+```
+
+This output is useful for the presentation because it gives a concrete example of how `nn.DataParallel` splits the mini-batch along dimension 0.
 
 ## Result Interpretation Notes
 
-The ORCA timings are interpreted as hardware-specific case studies, not universal benchmark claims.
+ORCA timing results depend on:
 
-Important factors include:
+* GPU model
+* CPU allocation
+* Memory allocation
+* PyTorch version
+* CUDA runtime and driver
+* Scheduler allocation
+* Tensor size
+* Batch size
+* Timing methodology
+* CPU-GPU transfer behavior
+* Use of `torch.cuda.synchronize()`
 
-- GPU model
-- GPU memory
-- CPU resources
-- Software environment
-- Job allocation
-- Batch size
-- Tensor dtype
-- Timing methodology
-- Whether CPU-GPU transfers are included in the timed region
-- Whether `torch.cuda.synchronize()` was used before stopping GPU timers
+The ORCA results should be interpreted as project-specific benchmark case studies, not universal hardware claims.
 
-The main purpose of the ORCA comparison is to show how the same PyTorch tensor computations behave in a research-computing GPU environment compared with the local CPU and local laptop GPU.
+The main teaching value of the ORCA component is that it shows how the same PyTorch ideas behave in a cluster setting:
+
+* Scheduler allocation matters.
+* Device placement still matters.
+* GPU memory movement still matters.
+* Batch size and vectorization still matter.
+* Multi-GPU execution has overhead.

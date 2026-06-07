@@ -6,13 +6,13 @@
 
 ## Project Context
 
-This project is a teaching presentation for a graduate-level deep learning course. The project builds on course topics such as tensors, batched matrix multiplication, convolutional layers, computational graphs, backpropagation, autograd, PyTorch modules, mini-batch training, and GPU use in deep learning.
+This project is a teaching presentation for a graduate-level deep learning course. It connects course topics such as tensors, batched matrix multiplication, convolutional layers, computational graphs, backpropagation, autograd, PyTorch modules, mini-batch training, and GPU use in deep learning.
 
-The project focuses on a practical and mathematical question:
+The central question is:
 
 **How do deep-learning tensor computations behave across local CPU, local GPU, and cluster GPU settings?**
 
-The main goal is not to give a broad survey of GPU architecture or CUDA programming. Instead, the goal is to connect the mathematical structure of neural-network computations to practical performance behavior in PyTorch across local and cluster computing environments.
+The goal is not to give a broad survey of GPU architecture or CUDA programming. Instead, the project focuses on how tensor structure, device placement, batching, memory movement, vectorization, and hardware scale affect PyTorch performance.
 
 ## Central Teaching Claim
 
@@ -32,11 +32,11 @@ GPU acceleration may be reduced or eliminated when overhead dominates, especiall
 - Insufficient batch sizes
 - Memory bottlenecks
 - Device-placement mistakes
-- Communication/synchronization overhead in multi-GPU settings
+- Communication and synchronization overhead in multi-GPU settings
 
 ## Course Connections
 
-This project connects GPU acceleration to several core ideas from the course:
+This project connects GPU acceleration to several course ideas:
 
 - Tensor operations and tensor shapes
 - Matrix multiplication
@@ -45,12 +45,11 @@ This project connects GPU acceleration to several core ideas from the course:
 - Mini-batch training
 - Computational graphs
 - Forward and backward passes
-- Autograd
+- Backpropagation and autograd
 - PyTorch modules
 - PyTorch device placement
-- Role of GPUs in modern deep learning
 
-A key theme is that deep learning computations are not just abstract formulas. They are implemented as tensor operations, and the structure of those tensor operations strongly affects whether GPU acceleration is effective.
+A central theme is that deep-learning computations are not only mathematical formulas. They are implemented as tensor operations, and the structure of those tensor operations strongly affects whether GPU acceleration is effective.
 
 ## Mathematical Motivation
 
@@ -62,17 +61,17 @@ $$C = AB,$$
 
 each output entry has the form
 
-$$C_{ij} = \sum_k A_{ik} B_{kj}.$$
+$$C_{ij} = \sum_k A_{ik}B_{kj}.$$
 
-Each output entry is a dot product, and many output entries can be computed independently or in parallel blocks. Larger matrices expose more parallel work, making them better suited for GPU execution.
+Many output entries can be computed independently or in parallel blocks. Larger matrices expose more parallel work, making them better suited for GPU execution.
 
 ### Batched Linear Layers
 
-A single linear layer can be written as a matrix-vector product. However, for a mini-batch of inputs, the same layer becomes a matrix-matrix operation:
+A single linear layer can be written as a matrix-vector product. For a mini-batch of inputs, the same layer becomes a matrix-matrix operation:
 
-$$Y = X W^T + \mathbf{1} b^T.$$
+$$Y = XW^T + \mathbf{1}b^T.$$
 
-This connects directly to mini-batch training. Larger batches can expose more parallel work and improve GPU utilization, although very large batches may introduce memory limits or affect optimization behavior.
+This connects directly to mini-batch training. Larger batches can expose more parallel work and improve GPU utilization, although very large batches may affect optimization behavior or run into memory limits.
 
 ### Convolutional Layers
 
@@ -82,7 +81,7 @@ This makes convolution computationally expensive but highly parallelizable.
 
 ### Backpropagation
 
-GPU acceleration is relevant not only to inference but also to training. The backward pass through linear and convolutional layers is also made of tensor operations, including matrix products, tensor contractions, and convolution-related computations.
+GPU acceleration matters for both inference and training. The backward pass through linear and convolutional layers is also made of tensor operations, including matrix products, tensor contractions, and convolution-related computations.
 
 ## PyTorch Device Model
 
@@ -96,27 +95,3 @@ x = x.to(device)
 y = y.to(device)
 
 output = model(x)
-```
-
-Important device rules:
-
-- Tensors live on devices
-- CPU tensors are computed on the CPU
-- GPU tensors are computed on the GPU
-- Operands in the same operation generally need to be on the same device
-- `tensor.to(device)` copies data when needed
-- `model.to(device)` moves model parameters and buffers
-- Repeated device transfers should be avoided inside tight loops
-
-## Broader Computational Context
-
-The project focuses on GPU acceleration for deep neural networks, but it also connects naturally to larger computational themes.
-
-For example, GPU acceleration can make large multilevel or scientific-computing problems more feasible when expensive operations involve parallel linear algebra, smoothing, residual computation, restriction/prolongation, or matrix-vector operations. However, this project treats that connection as a brief discussion point rather than a separate experiment.
-
-The main distinction is:
-
-- Multilevel methods reduce computational work by changing the problem scale
-- GPUs accelerate suitable parallel work on a given problem representation
-
-Both approaches depend strongly on structure, memory movement, communication, and problem size.
