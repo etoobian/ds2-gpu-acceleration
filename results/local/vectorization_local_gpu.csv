@@ -1,0 +1,9 @@
+experiment,n,tensor_size_mb,device,dtype,case,repeats,total_seconds,seconds_per_repeat,skipped
+vectorization,1000,0.003814697265625,cuda,float32,vectorized_tensor_op,100,0.0016976000042632222,1.6976000042632223e-05,False
+vectorization,1000,0.003814697265625,cuda,float32,python_loop_scalar,1,0.027919000014662743,0.027919000014662743,False
+vectorization,10000,0.03814697265625,cuda,float32,vectorized_tensor_op,100,0.002179600007366389,2.179600007366389e-05,False
+vectorization,10000,0.03814697265625,cuda,float32,python_loop_scalar,1,0.2814797000028193,0.2814797000028193,False
+vectorization,100000,0.3814697265625,cuda,float32,vectorized_tensor_op,100,0.001888300001155585,1.888300001155585e-05,False
+vectorization,100000,0.3814697265625,cuda,float32,python_loop_scalar,1,2.788619800005108,2.788619800005108,False
+vectorization,1000000,3.814697265625,cuda,float32,vectorized_tensor_op,100,0.0015273999888449907,1.5273999888449908e-05,False
+vectorization,1000000,3.814697265625,cuda,float32,python_loop_scalar,1,24.411289999989094,24.411289999989094,False
