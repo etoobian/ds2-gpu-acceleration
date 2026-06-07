@@ -25,7 +25,7 @@ from models import ProjectCIFAR10CNN, count_parameters
 from timing_utils import synchronize_if_cuda
 
 
-DEFAULT_BATCH_SIZES = [128, 256, 512, 1024, 2048]
+DEFAULT_BATCH_SIZES = [128, 256, 512, 1024, 2048, 4096]
 
 
 def set_seed(seed: int) -> None:
