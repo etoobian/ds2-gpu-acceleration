@@ -7,6 +7,14 @@ records runtime and accuracy.
 The goal is not to find the best CIFAR-10 model. The goal is to study how
 batch size affects training runtime, testing runtime, throughput, and accuracy
 across CPU/GPU and local/ORCA environments.
+
+Timing convention:
+    - Training runtime measures the actual training loop only:
+      data loading, device transfer, forward pass, loss, backward pass,
+      and optimizer step.
+    - Final train accuracy is evaluated after training and is not included
+      in training runtime.
+    - Final test accuracy is also evaluated separately.
 """
 
 from __future__ import annotations
@@ -97,24 +105,26 @@ def train_model(
     learning_rate: float,
 ) -> Dict[str, float]:
     """
-    Train the model and record total training runtime and final train accuracy.
+    Train the model and record total training runtime.
 
-    Training accuracy is computed during the final epoch.
+    The training runtime measures the actual training loop only:
+        data loading, device transfer, forward pass, loss,
+        backward pass, and optimizer step.
+
+    Final training accuracy is evaluated separately after training so that
+    accuracy calculation is not mixed into the training runtime.
     """
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
 
+    train_examples_per_epoch = len(train_loader.dataset)
+    train_examples_total = train_examples_per_epoch * epochs
+
     synchronize_if_cuda(device)
     start = time.perf_counter()
 
-    final_correct = 0
-    final_total = 0
-
     for epoch in range(epochs):
         model.train()
-
-        running_correct = 0
-        running_total = 0
 
         for inputs, targets in train_loader:
             inputs = inputs.to(device)
@@ -126,41 +136,33 @@ def train_model(
             loss.backward()
             optimizer.step()
 
-            _, predicted = outputs.max(dim=1)
-            running_total += targets.size(0)
-            running_correct += predicted.eq(targets).sum().item()
-
-        final_correct = running_correct
-        final_total = running_total
-
-        train_acc = final_correct / final_total
-        print(
-            f"    epoch {epoch + 1:02d}/{epochs}: "
-            f"train accuracy = {100 * train_acc:.2f}%"
-        )
+        print(f"    epoch {epoch + 1:02d}/{epochs}: completed")
 
     synchronize_if_cuda(device)
     end = time.perf_counter()
 
     train_runtime = end - start
-    train_accuracy = final_correct / final_total
 
     return {
         "train_runtime_seconds": train_runtime,
-        "train_accuracy": train_accuracy,
-        "train_examples": float(final_total),
-        "train_examples_total": float(final_total * epochs),
-        "train_examples_per_second": float(final_total * epochs) / train_runtime,
+        "train_examples": float(train_examples_per_epoch),
+        "train_examples_total": float(train_examples_total),
+        "train_examples_per_second": float(train_examples_total) / train_runtime,
     }
 
 
 @torch.no_grad()
 def evaluate_model(
     model: nn.Module,
-    test_loader: DataLoader,
+    data_loader: DataLoader,
     device: torch.device,
 ) -> Dict[str, float]:
-    """Evaluate the model and record test runtime and test accuracy."""
+    """
+    Evaluate the model and record evaluation runtime and accuracy.
+
+    Gradients are disabled during evaluation because no training update is
+    performed. This reduces memory use and avoids unnecessary autograd work.
+    """
     model.eval()
 
     synchronize_if_cuda(device)
@@ -169,7 +171,7 @@ def evaluate_model(
     correct = 0
     total = 0
 
-    for inputs, targets in test_loader:
+    for inputs, targets in data_loader:
         inputs = inputs.to(device)
         targets = targets.to(device)
 
@@ -182,14 +184,14 @@ def evaluate_model(
     synchronize_if_cuda(device)
     end = time.perf_counter()
 
-    test_runtime = end - start
-    test_accuracy = correct / total
+    eval_runtime = end - start
+    accuracy = correct / total
 
     return {
-        "test_runtime_seconds": test_runtime,
-        "test_accuracy": test_accuracy,
-        "test_examples": float(total),
-        "test_examples_per_second": float(total) / test_runtime,
+        "eval_runtime_seconds": eval_runtime,
+        "accuracy": accuracy,
+        "examples": float(total),
+        "examples_per_second": float(total) / eval_runtime,
     }
 
 
@@ -232,19 +234,31 @@ def benchmark_batch_size(
         learning_rate=learning_rate,
     )
 
+    train_eval_metrics = evaluate_model(
+        model=model,
+        data_loader=train_loader,
+        device=device,
+    )
+
     test_metrics = evaluate_model(
         model=model,
-        test_loader=test_loader,
+        data_loader=test_loader,
         device=device,
     )
 
     print(
-        f"  train runtime = {train_metrics['train_runtime_seconds']:.4f} sec, "
-        f"train accuracy = {100 * train_metrics['train_accuracy']:.2f}%"
+        f"  train runtime      = "
+        f"{train_metrics['train_runtime_seconds']:.4f} sec"
     )
     print(
-        f"  test runtime  = {test_metrics['test_runtime_seconds']:.4f} sec, "
-        f"test accuracy  = {100 * test_metrics['test_accuracy']:.2f}%"
+        f"  train eval runtime = "
+        f"{train_eval_metrics['eval_runtime_seconds']:.4f} sec, "
+        f"train accuracy = {100 * train_eval_metrics['accuracy']:.2f}%"
+    )
+    print(
+        f"  test runtime       = "
+        f"{test_metrics['eval_runtime_seconds']:.4f} sec, "
+        f"test accuracy = {100 * test_metrics['accuracy']:.2f}%"
     )
 
     row: Dict[str, object] = {
@@ -257,10 +271,21 @@ def benchmark_batch_size(
         "num_workers": num_workers,
         "model": model.__class__.__name__,
         "parameter_count": parameter_count,
+        "train_runtime_seconds": train_metrics["train_runtime_seconds"],
+        "train_examples": train_metrics["train_examples"],
+        "train_examples_total": train_metrics["train_examples_total"],
+        "train_examples_per_second": train_metrics["train_examples_per_second"],
+        "train_eval_runtime_seconds": train_eval_metrics["eval_runtime_seconds"],
+        "train_accuracy": train_eval_metrics["accuracy"],
+        "train_eval_examples": train_eval_metrics["examples"],
+        "train_eval_examples_per_second": train_eval_metrics[
+            "examples_per_second"
+        ],
+        "test_runtime_seconds": test_metrics["eval_runtime_seconds"],
+        "test_accuracy": test_metrics["accuracy"],
+        "test_examples": test_metrics["examples"],
+        "test_examples_per_second": test_metrics["examples_per_second"],
     }
-
-    row.update(train_metrics)
-    row.update(test_metrics)
 
     return row
 
@@ -280,10 +305,13 @@ def write_csv(rows: List[Dict[str, object]], output_path: Path) -> None:
         "model",
         "parameter_count",
         "train_runtime_seconds",
-        "train_accuracy",
         "train_examples",
         "train_examples_total",
         "train_examples_per_second",
+        "train_eval_runtime_seconds",
+        "train_accuracy",
+        "train_eval_examples",
+        "train_eval_examples_per_second",
         "test_runtime_seconds",
         "test_accuracy",
         "test_examples",
