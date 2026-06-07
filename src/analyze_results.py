@@ -27,6 +27,12 @@ LOCAL_COLOR = "tab:purple"
 ORCA_COLOR = "#7A9A22"
 REFERENCE_COLOR = "coral"
 
+LOCAL_VECTOR_COLOR = "#4B0082"   # dark purple
+LOCAL_LOOP_COLOR = "#D55EFF"     # bright magenta-purple
+
+ORCA_VECTOR_COLOR = "#2F6B1F"    # dark green
+ORCA_LOOP_COLOR = "#B6D800"      # bright yellow-green
+
 CPU_LINESTYLE = "--"
 GPU_LINESTYLE = "-"
 CPU_MARKER = "s"
@@ -900,6 +906,312 @@ def analyze_transfer(args: argparse.Namespace) -> None:
 
 
 # ------------------------------------------------------------
+# Experiment 4: Vectorization versus Python loops
+# ------------------------------------------------------------
+
+def load_vectorization_file(
+    path: Path,
+    environment: str,
+    device: str,
+) -> pd.DataFrame:
+    """Load one vectorization CSV and add environment/device labels."""
+    data = pd.read_csv(path)
+    data["environment"] = environment
+    data["device"] = device
+    data["environment_device"] = data.apply(
+        lambda row: display_label(row["environment"], row["device"]),
+        axis=1,
+    )
+
+    return data
+
+
+def load_vectorization_results(
+    local_cpu_path: Path,
+    local_gpu_path: Path,
+    orca_cpu_path: Path,
+    orca_gpu_path: Path,
+) -> pd.DataFrame:
+    """Load all four vectorization benchmark result files."""
+    frames = [
+        load_vectorization_file(local_cpu_path, "local", "cpu"),
+        load_vectorization_file(local_gpu_path, "local", "cuda"),
+        load_vectorization_file(orca_cpu_path, "orca", "cpu"),
+        load_vectorization_file(orca_gpu_path, "orca", "cuda"),
+    ]
+
+    combined = pd.concat(frames, ignore_index=True)
+
+    required_columns = {
+        "experiment",
+        "n",
+        "tensor_size_mb",
+        "device",
+        "dtype",
+        "case",
+        "repeats",
+        "total_seconds",
+        "seconds_per_repeat",
+        "skipped",
+        "environment",
+        "environment_device",
+    }
+
+    missing = required_columns.difference(combined.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {sorted(missing)}")
+
+    combined["milliseconds_per_repeat"] = (
+        1000.0 * combined["seconds_per_repeat"]
+    )
+
+    return combined
+
+
+def make_vectorization_summary(results: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create a summary table for vectorization results.
+
+    Adds a loop/vectorized ratio for each environment/device/tensor size.
+    """
+    summary = results.copy()
+
+    vectorized = summary[summary["case"] == "vectorized_tensor_op"][
+        ["environment", "device", "n", "milliseconds_per_repeat"]
+    ].rename(columns={"milliseconds_per_repeat": "vectorized_ms_per_repeat"})
+
+    loop = summary[summary["case"] == "python_loop_scalar"][
+        ["environment", "device", "n", "milliseconds_per_repeat"]
+    ].rename(columns={"milliseconds_per_repeat": "loop_ms_per_repeat"})
+
+    ratio = pd.merge(vectorized, loop, on=["environment", "device", "n"])
+    ratio["loop_over_vectorized_ratio"] = (
+        ratio["loop_ms_per_repeat"] / ratio["vectorized_ms_per_repeat"]
+    )
+
+    summary = pd.merge(
+        summary,
+        ratio[
+            [
+                "environment",
+                "device",
+                "n",
+                "vectorized_ms_per_repeat",
+                "loop_ms_per_repeat",
+                "loop_over_vectorized_ratio",
+            ]
+        ],
+        on=["environment", "device", "n"],
+        how="left",
+    )
+
+    return summary.sort_values(by=["environment", "device", "n", "case"])
+
+
+def vectorization_color(environment: str, case: str) -> str:
+    """Return color for vectorization plot."""
+    if environment == "local" and case == "vectorized_tensor_op":
+        return LOCAL_VECTOR_COLOR
+
+    if environment == "local" and case == "python_loop_scalar":
+        return LOCAL_LOOP_COLOR
+
+    if environment == "orca" and case == "vectorized_tensor_op":
+        return ORCA_VECTOR_COLOR
+
+    if environment == "orca" and case == "python_loop_scalar":
+        return ORCA_LOOP_COLOR
+
+    return "black"
+
+
+def plot_vectorization_runtime(
+    summary: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Plot vectorized tensor operations versus Python scalar loops."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    short_case_labels = {
+        "vectorized_tensor_op": "Vec",
+        "python_loop_scalar": "Loop",
+    }
+
+    fig, ax = plt.subplots(figsize=(8.5, 5.25))
+
+    for environment in ["local", "orca"]:
+        for device in ["cpu", "cuda"]:
+            for case in ["vectorized_tensor_op", "python_loop_scalar"]:
+                subset = summary[
+                    (summary["environment"] == environment)
+                    & (summary["device"] == device)
+                    & (summary["case"] == case)
+                ].sort_values("n")
+
+                label = (
+                    f"{display_label(environment, device)}: "
+                    f"{short_case_labels[case]}"
+                )
+
+                ax.plot(
+                    subset["n"],
+                    subset["milliseconds_per_repeat"],
+                    color=vectorization_color(environment, case),
+                    linestyle=device_linestyle(device),
+                    marker=device_marker(device),
+                    linewidth=2.0 if case == "python_loop_scalar" else 1.6,
+                    markersize=5.5,
+                    label=label,
+                    alpha=0.95,
+                )
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+
+    ax.set_title(
+        "Vectorized Tensor Operations vs. Python Loops",
+        fontsize=16,
+        fontweight="bold",
+        pad=12,
+    )
+    ax.set_xlabel(
+        r"Tensor length $n$",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+    ax.set_ylabel(
+        "Time per repeat (ms, log scale)",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+
+    ax.tick_params(axis="both", labelsize=10)
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.55)
+    ax.legend(
+        fontsize=7.5,
+        framealpha=0.9,
+        ncol=1,
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+    )
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved vectorization runtime figure to: {output_path}")
+
+
+def plot_vectorization_ratio(
+    summary: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Plot Python-loop runtime divided by vectorized-runtime."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    ratio_data = summary[
+        summary["case"] == "vectorized_tensor_op"
+    ].copy()
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.0))
+
+    for environment in ["local", "orca"]:
+        for device in ["cpu", "cuda"]:
+            subset = ratio_data[
+                (ratio_data["environment"] == environment)
+                & (ratio_data["device"] == device)
+            ].sort_values("n")
+
+            ax.plot(
+                subset["n"],
+                subset["loop_over_vectorized_ratio"],
+                color=environment_color(environment),
+                linestyle=device_linestyle(device),
+                marker=device_marker(device),
+                linewidth=1.8,
+                markersize=5,
+                label=display_label(environment, device),
+            )
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+
+    ax.set_title(
+        "Cost of Python Loops Compared with Vectorized Tensor Operations",
+        fontsize=15,
+        fontweight="bold",
+        pad=12,
+    )
+    ax.set_xlabel(
+        r"Tensor length $n$",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+    ax.set_ylabel(
+        "Python loop time / vectorized time (log scale)",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+
+    ax.tick_params(axis="both", labelsize=10)
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.55)
+    ax.legend(fontsize=10, framealpha=0.9)
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved vectorization ratio figure to: {output_path}")
+
+
+def print_vectorization_takeaways(summary: pd.DataFrame) -> None:
+    """Print vectorization interpretation values."""
+    print("\nVectorization takeaways")
+    print("-" * 60)
+
+    ratio_data = summary[
+        summary["case"] == "vectorized_tensor_op"
+    ].copy()
+
+    for environment in ["local", "orca"]:
+        for device in ["cpu", "cuda"]:
+            subset = ratio_data[
+                (ratio_data["environment"] == environment)
+                & (ratio_data["device"] == device)
+            ].sort_values("n")
+
+            largest = subset.iloc[-1]
+            label = display_label(environment, device)
+
+            print(
+                f"{label}, n = {int(largest['n']):,}: "
+                f"Python loop/vectorized ratio = "
+                f"{largest['loop_over_vectorized_ratio']:.2f}x"
+            )
+
+
+def analyze_vectorization(args: argparse.Namespace) -> None:
+    """Run vectorization analysis."""
+    results = load_vectorization_results(
+        local_cpu_path=Path(args.local_vectorization_cpu),
+        local_gpu_path=Path(args.local_vectorization_gpu),
+        orca_cpu_path=Path(args.orca_vectorization_cpu),
+        orca_gpu_path=Path(args.orca_vectorization_gpu),
+    )
+
+    summary = make_vectorization_summary(results)
+
+    save_summary(summary, Path(args.vectorization_summary_output))
+    plot_vectorization_runtime(summary, Path(args.vectorization_runtime_figure))
+    plot_vectorization_ratio(summary, Path(args.vectorization_ratio_figure))
+    print_vectorization_takeaways(summary)
+
+
+# ------------------------------------------------------------
 # Argument parsing and main
 # ------------------------------------------------------------
 
@@ -912,9 +1224,10 @@ def parse_args() -> argparse.Namespace:
         "--experiment",
         type=str,
         default="all",
-        choices=["matmul", "batch_size", "transfer", "all"],
+        choices=["matmul", "batch_size", "transfer", "vectorization", "all"],
         help="Experiment results to analyze.",
     )
+
 
     # Experiment 1 paths.
     parser.add_argument(
@@ -947,6 +1260,7 @@ def parse_args() -> argparse.Namespace:
         default="figures/matmul_speedup.png",
         help="Path to save matrix multiplication speedup figure.",
     )
+
 
     # Experiment 2 paths.
     parser.add_argument(
@@ -998,6 +1312,7 @@ def parse_args() -> argparse.Namespace:
         help="Path to save CIFAR-10 batch-size test accuracy figure.",
     )
 
+
     # Experiment 3 paths.
     parser.add_argument(
         "--local-transfer",
@@ -1024,6 +1339,51 @@ def parse_args() -> argparse.Namespace:
         help="Path to save bad-vs-good transfer-overhead figure.",
     )
 
+
+    # Experiment 4 paths.
+    parser.add_argument(
+        "--local-vectorization-cpu",
+        type=str,
+        default="results/local/vectorization_local_cpu.csv",
+        help="Path to local CPU vectorization results.",
+    )
+    parser.add_argument(
+        "--local-vectorization-gpu",
+        type=str,
+        default="results/local/vectorization_local_gpu.csv",
+        help="Path to local GPU vectorization results.",
+    )
+    parser.add_argument(
+        "--orca-vectorization-cpu",
+        type=str,
+        default="results/orca/vectorization_orca_cpu.csv",
+        help="Path to ORCA CPU vectorization results.",
+    )
+    parser.add_argument(
+        "--orca-vectorization-gpu",
+        type=str,
+        default="results/orca/vectorization_orca_gpu.csv",
+        help="Path to ORCA GPU vectorization results.",
+    )
+    parser.add_argument(
+        "--vectorization-summary-output",
+        type=str,
+        default="results/vectorization_summary.csv",
+        help="Path to save vectorization summary CSV.",
+    )
+    parser.add_argument(
+        "--vectorization-runtime-figure",
+        type=str,
+        default="figures/vectorization_runtime.png",
+        help="Path to save vectorization runtime figure.",
+    )
+    parser.add_argument(
+        "--vectorization-ratio-figure",
+        type=str,
+        default="figures/vectorization_loop_ratio.png",
+        help="Path to save vectorization loop-ratio figure.",
+    )
+
     return parser.parse_args()
 
 
@@ -1038,6 +1398,9 @@ def main() -> None:
 
     if args.experiment in {"transfer", "all"}:
         analyze_transfer(args)
+
+    if args.experiment in {"vectorization", "all"}:
+        analyze_vectorization(args)
 
 if __name__ == "__main__":
     main()
