@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=ds2-vector
-#SBATCH --partition=short
+#SBATCH --job-name=ds2-vector-cpu
+#SBATCH --partition=normal
 #SBATCH --time=00:45:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24G
-#SBATCH --gres=gpu:l40s:1
-#SBATCH --output=results/orca/vectorization_%j.out
-#SBATCH --error=results/orca/vectorization_%j.err
+#SBATCH --output=results/orca/vectorization_cpu_%j.out
+#SBATCH --error=results/orca/vectorization_cpu_%j.err
 
 echo "Job started on: $(date)"
 echo "Hostname: $(hostname)"
@@ -18,8 +17,8 @@ echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES}"
 source ~/ds2-gpu-env/bin/activate
 
 python src/benchmark_vectorization.py \
-    --device cuda \
-    --output results/orca/vectorization_orca_gpu.csv \
+    --device cpu \
+    --output results/orca/vectorization_orca_cpu.csv \
     --sizes 1000 10000 100000 1000000 \
     --repeats 100 \
     --loop-repeats 1 \
