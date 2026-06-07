@@ -3,21 +3,26 @@ Analyze benchmark results and create summary tables/figures.
 
 Current functionality:
     - Experiment 1: matrix multiplication size sweep
+    - Experiment 2: CIFAR-10 batch-size benchmark
 
-This script reads local and ORCA benchmark CSV files, computes CPU/GPU
-speedups, saves a summary table, and generates presentation-ready figures.
+This script reads benchmark CSV files, computes useful derived quantities,
+saves summary tables, and generates presentation-ready figures.
 """
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Dict, List
+from typing import List
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# Plot colors and line/marker types
+
+# ------------------------------------------------------------
+# Shared plot styling
+# ------------------------------------------------------------
+
 LOCAL_COLOR = "tab:purple"
 ORCA_COLOR = "#7A9A22"
 REFERENCE_COLOR = "coral"
@@ -27,9 +32,51 @@ GPU_LINESTYLE = "-"
 CPU_MARKER = "s"
 GPU_MARKER = "o"
 
-##############################################
-# EXPERIMENT 1:  Matrix Multiplication Sweep
-##############################################
+
+def environment_color(environment: str) -> str:
+    """Return the plot color for an environment."""
+    if environment == "local":
+        return LOCAL_COLOR
+
+    if environment == "orca":
+        return ORCA_COLOR
+
+    return "black"
+
+
+def device_linestyle(device: str) -> str:
+    """Return line style for CPU/GPU device."""
+    if device == "cpu":
+        return CPU_LINESTYLE
+
+    if device == "cuda":
+        return GPU_LINESTYLE
+
+    return "-"
+
+
+def device_marker(device: str) -> str:
+    """Return marker style for CPU/GPU device."""
+    if device == "cpu":
+        return CPU_MARKER
+
+    if device == "cuda":
+        return GPU_MARKER
+
+    return "o"
+
+
+def display_label(environment: str, device: str) -> str:
+    """Return a readable label such as Local CPU or ORCA GPU."""
+    env_label = "Local" if environment == "local" else "ORCA"
+    device_label = "GPU" if device == "cuda" else "CPU"
+    return f"{env_label} {device_label}"
+
+
+# ------------------------------------------------------------
+# Experiment 1: Matrix multiplication size sweep
+# ------------------------------------------------------------
+
 def load_matmul_results(local_path: Path, orca_path: Path) -> pd.DataFrame:
     """Load local and ORCA matrix multiplication benchmark results."""
     local = pd.read_csv(local_path)
@@ -73,7 +120,7 @@ def make_matmul_summary(results: pd.DataFrame) -> pd.DataFrame:
     """
     matmul = results[results["experiment"] == "matmul"].copy()
 
-    # Convert seconds to milliseconds for easier presentation
+    # Convert seconds to milliseconds for easier presentation.
     matmul["mean_ms"] = 1000.0 * matmul["mean_seconds"]
     matmul["std_ms"] = 1000.0 * matmul["std_seconds"]
 
@@ -94,13 +141,13 @@ def make_matmul_summary(results: pd.DataFrame) -> pd.DataFrame:
     summary = pd.DataFrame(index=pivot_mean.index)
     summary.index.name = "n"
 
-    # Mean runtimes
+    # Mean runtimes.
     summary["local_cpu_mean_ms"] = pivot_mean[("local", "cpu")]
     summary["local_gpu_mean_ms"] = pivot_mean[("local", "cuda")]
     summary["orca_cpu_mean_ms"] = pivot_mean[("orca", "cpu")]
     summary["orca_gpu_mean_ms"] = pivot_mean[("orca", "cuda")]
 
-    # Standard deviations
+    # Standard deviations.
     summary["local_cpu_std_ms"] = pivot_std[("local", "cpu")]
     summary["local_gpu_std_ms"] = pivot_std[("local", "cuda")]
     summary["orca_cpu_std_ms"] = pivot_std[("orca", "cpu")]
@@ -131,8 +178,8 @@ def plot_matmul_runtime(summary: pd.DataFrame, output_path: Path) -> None:
 
     fig, ax = plt.subplots(figsize=(8.0, 5.0))
 
-    # Color encodes environment
-    # Line style encodes device: dashed = CPU, solid = GPU
+    # Color encodes environment.
+    # Line style encodes device: dashed = CPU, solid = GPU.
     ax.plot(
         summary["n"],
         summary["local_cpu_mean_ms"],
@@ -267,8 +314,8 @@ def plot_matmul_speedup(summary: pd.DataFrame, output_path: Path) -> None:
     ax.tick_params(axis="both", labelsize=10)
     ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.55)
     ax.legend(fontsize=10, framealpha=0.9)
-    
-    # Interpretation annotations
+
+    # Interpretation annotations.
     ax.text(
         14,
         1.25,
@@ -289,7 +336,6 @@ def plot_matmul_speedup(summary: pd.DataFrame, output_path: Path) -> None:
     plt.close(fig)
 
     print(f"Saved speedup figure to: {output_path}")
-
 
 
 def print_matmul_takeaways(summary: pd.DataFrame) -> None:
@@ -322,17 +368,378 @@ def print_matmul_takeaways(summary: pd.DataFrame) -> None:
         )
 
 
+def analyze_matmul(args: argparse.Namespace) -> None:
+    """Run matrix multiplication analysis."""
+    results = load_matmul_results(
+        local_path=Path(args.local_matmul),
+        orca_path=Path(args.orca_matmul),
+    )
+
+    summary = make_matmul_summary(results)
+
+    save_summary(summary, Path(args.matmul_summary_output))
+    plot_matmul_runtime(summary, Path(args.matmul_runtime_figure))
+    plot_matmul_speedup(summary, Path(args.matmul_speedup_figure))
+    print_matmul_takeaways(summary)
+
+
+# ------------------------------------------------------------
+# Experiment 2: CIFAR-10 batch-size benchmark
+# ------------------------------------------------------------
+
+def load_batch_size_file(
+    path: Path,
+    environment: str,
+    device: str,
+) -> pd.DataFrame:
+    """Load one batch-size CSV and add environment/device labels."""
+    data = pd.read_csv(path)
+    data["environment"] = environment
+    data["device"] = device
+    data["environment_device"] = data.apply(
+        lambda row: display_label(row["environment"], row["device"]),
+        axis=1,
+    )
+
+    return data
+
+
+def load_batch_size_results(
+    local_cpu_path: Path,
+    local_gpu_path: Path,
+    orca_cpu_path: Path,
+    orca_gpu_path: Path,
+) -> pd.DataFrame:
+    """Load all four CIFAR-10 batch-size benchmark result files."""
+    frames = [
+        load_batch_size_file(local_cpu_path, "local", "cpu"),
+        load_batch_size_file(local_gpu_path, "local", "cuda"),
+        load_batch_size_file(orca_cpu_path, "orca", "cpu"),
+        load_batch_size_file(orca_gpu_path, "orca", "cuda"),
+    ]
+
+    combined = pd.concat(frames, ignore_index=True)
+
+    required_columns = {
+        "experiment",
+        "batch_size",
+        "device",
+        "epochs",
+        "learning_rate",
+        "seed",
+        "num_workers",
+        "model",
+        "parameter_count",
+        "train_runtime_seconds",
+        "train_examples",
+        "train_examples_total",
+        "train_examples_per_second",
+        "train_eval_runtime_seconds",
+        "train_accuracy",
+        "train_eval_examples",
+        "train_eval_examples_per_second",
+        "test_runtime_seconds",
+        "test_accuracy",
+        "test_examples",
+        "test_examples_per_second",
+        "environment",
+        "environment_device",
+    }
+
+    missing = required_columns.difference(combined.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {sorted(missing)}")
+
+    return combined
+
+
+def make_batch_size_summary(results: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create a presentation-friendly long summary table.
+
+    Accuracy columns are converted to percentages.
+    Runtime columns remain in seconds.
+    """
+    summary = results.copy()
+
+    summary["train_accuracy_percent"] = 100.0 * summary["train_accuracy"]
+    summary["test_accuracy_percent"] = 100.0 * summary["test_accuracy"]
+
+    # Useful for plotting or slide tables.
+    summary["train_runtime_minutes"] = summary["train_runtime_seconds"] / 60.0
+
+    ordered_columns = [
+        "environment",
+        "device",
+        "environment_device",
+        "batch_size",
+        "epochs",
+        "learning_rate",
+        "seed",
+        "num_workers",
+        "model",
+        "parameter_count",
+        "train_runtime_seconds",
+        "train_runtime_minutes",
+        "train_examples_per_second",
+        "train_eval_runtime_seconds",
+        "train_accuracy",
+        "train_accuracy_percent",
+        "test_runtime_seconds",
+        "test_examples_per_second",
+        "test_accuracy",
+        "test_accuracy_percent",
+    ]
+
+    return summary[ordered_columns].sort_values(
+        by=["environment", "device", "batch_size"]
+    )
+
+
+def plot_batch_size_train_runtime(
+    summary: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Plot CIFAR-10 training runtime versus batch size."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.0))
+
+    for environment in ["local", "orca"]:
+        for device in ["cpu", "cuda"]:
+            subset = summary[
+                (summary["environment"] == environment)
+                & (summary["device"] == device)
+            ].sort_values("batch_size")
+
+            ax.plot(
+                subset["batch_size"],
+                subset["train_runtime_seconds"],
+                color=environment_color(environment),
+                linestyle=device_linestyle(device),
+                marker=device_marker(device),
+                linewidth=1.8,
+                markersize=5,
+                label=display_label(environment, device),
+            )
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+
+    ax.set_title(
+        "CIFAR-10 Training Runtime by Batch Size",
+        fontsize=16,
+        fontweight="bold",
+        pad=12,
+    )
+    ax.set_xlabel(
+        "Batch size",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+    ax.set_ylabel(
+        "Training runtime (seconds, log scale)",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+
+    ax.tick_params(axis="both", labelsize=10)
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.55)
+    ax.legend(fontsize=10, framealpha=0.9)
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved batch-size train runtime figure to: {output_path}")
+
+
+def plot_batch_size_train_throughput(
+    summary: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Plot CIFAR-10 training throughput versus batch size."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.0))
+
+    for environment in ["local", "orca"]:
+        for device in ["cpu", "cuda"]:
+            subset = summary[
+                (summary["environment"] == environment)
+                & (summary["device"] == device)
+            ].sort_values("batch_size")
+
+            ax.plot(
+                subset["batch_size"],
+                subset["train_examples_per_second"],
+                color=environment_color(environment),
+                linestyle=device_linestyle(device),
+                marker=device_marker(device),
+                linewidth=1.8,
+                markersize=5,
+                label=display_label(environment, device),
+            )
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+
+    ax.set_title(
+        "CIFAR-10 Training Throughput by Batch Size",
+        fontsize=16,
+        fontweight="bold",
+        pad=12,
+    )
+    ax.set_xlabel(
+        "Batch size",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+    ax.set_ylabel(
+        "Training throughput (examples/sec, log scale)",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+
+    ax.tick_params(axis="both", labelsize=10)
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.55)
+    ax.legend(fontsize=10, framealpha=0.9)
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved batch-size train throughput figure to: {output_path}")
+
+
+def plot_batch_size_test_accuracy(
+    summary: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Plot CIFAR-10 test accuracy versus batch size."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.0))
+
+    for environment in ["local", "orca"]:
+        for device in ["cpu", "cuda"]:
+            subset = summary[
+                (summary["environment"] == environment)
+                & (summary["device"] == device)
+            ].sort_values("batch_size")
+
+            ax.plot(
+                subset["batch_size"],
+                subset["test_accuracy_percent"],
+                color=environment_color(environment),
+                linestyle=device_linestyle(device),
+                marker=device_marker(device),
+                linewidth=1.8,
+                markersize=5,
+                label=display_label(environment, device),
+            )
+
+    ax.set_xscale("log")
+
+    ax.set_title(
+        "CIFAR-10 Test Accuracy by Batch Size",
+        fontsize=16,
+        fontweight="bold",
+        pad=12,
+    )
+    ax.set_xlabel(
+        "Batch size",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+    ax.set_ylabel(
+        "Test accuracy (%)",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+
+    ax.tick_params(axis="both", labelsize=10)
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.55)
+    ax.legend(fontsize=10, framealpha=0.9)
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved batch-size test accuracy figure to: {output_path}")
+
+
+def print_batch_size_takeaways(summary: pd.DataFrame) -> None:
+    """Print a few useful values for interpretation."""
+    print("\nCIFAR-10 batch-size takeaways")
+    print("-" * 60)
+
+    for environment in ["local", "orca"]:
+        for device in ["cpu", "cuda"]:
+            subset = summary[
+                (summary["environment"] == environment)
+                & (summary["device"] == device)
+            ].sort_values("batch_size")
+
+            smallest = subset.iloc[0]
+            largest = subset.iloc[-1]
+
+            label = display_label(environment, device)
+            print(f"{label}:")
+            print(
+                f"  batch {int(smallest['batch_size'])}: "
+                f"train runtime = {smallest['train_runtime_seconds']:.2f} sec, "
+                f"test acc = {smallest['test_accuracy_percent']:.2f}%"
+            )
+            print(
+                f"  batch {int(largest['batch_size'])}: "
+                f"train runtime = {largest['train_runtime_seconds']:.2f} sec, "
+                f"test acc = {largest['test_accuracy_percent']:.2f}%"
+            )
+
+
+def analyze_batch_size(args: argparse.Namespace) -> None:
+    """Run CIFAR-10 batch-size analysis."""
+    results = load_batch_size_results(
+        local_cpu_path=Path(args.local_batch_cpu),
+        local_gpu_path=Path(args.local_batch_gpu),
+        orca_cpu_path=Path(args.orca_batch_cpu),
+        orca_gpu_path=Path(args.orca_batch_gpu),
+    )
+
+    summary = make_batch_size_summary(results)
+
+    save_summary(summary, Path(args.batch_summary_output))
+    plot_batch_size_train_runtime(summary, Path(args.batch_train_runtime_figure))
+    plot_batch_size_train_throughput(summary, Path(args.batch_train_throughput_figure))
+    plot_batch_size_test_accuracy(summary, Path(args.batch_test_accuracy_figure))
+    print_batch_size_takeaways(summary)
+
+
+# ------------------------------------------------------------
+# Argument parsing and main
+# ------------------------------------------------------------
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Analyze DS2 GPU acceleration benchmark results."
     )
+
     parser.add_argument(
         "--experiment",
         type=str,
-        default="matmul",
-        choices=["matmul"],
+        default="all",
+        choices=["matmul", "batch_size", "all"],
         help="Experiment results to analyze.",
     )
+
+    # Experiment 1 paths.
     parser.add_argument(
         "--local-matmul",
         type=str,
@@ -346,41 +753,85 @@ def parse_args() -> argparse.Namespace:
         help="Path to ORCA matrix multiplication results.",
     )
     parser.add_argument(
-        "--summary-output",
+        "--matmul-summary-output",
         type=str,
         default="results/matmul_summary.csv",
-        help="Path to save summary CSV.",
+        help="Path to save matrix multiplication summary CSV.",
     )
     parser.add_argument(
-        "--runtime-figure",
+        "--matmul-runtime-figure",
         type=str,
         default="figures/matmul_runtime.png",
-        help="Path to save runtime figure.",
+        help="Path to save matrix multiplication runtime figure.",
     )
     parser.add_argument(
-        "--speedup-figure",
+        "--matmul-speedup-figure",
         type=str,
         default="figures/matmul_speedup.png",
-        help="Path to save speedup figure.",
+        help="Path to save matrix multiplication speedup figure.",
     )
+
+    # Experiment 2 paths.
+    parser.add_argument(
+        "--local-batch-cpu",
+        type=str,
+        default="results/local/batch_size_local_cpu.csv",
+        help="Path to local CPU CIFAR-10 batch-size results.",
+    )
+    parser.add_argument(
+        "--local-batch-gpu",
+        type=str,
+        default="results/local/batch_size_local_gpu.csv",
+        help="Path to local GPU CIFAR-10 batch-size results.",
+    )
+    parser.add_argument(
+        "--orca-batch-cpu",
+        type=str,
+        default="results/orca/batch_size_orca_cpu.csv",
+        help="Path to ORCA CPU CIFAR-10 batch-size results.",
+    )
+    parser.add_argument(
+        "--orca-batch-gpu",
+        type=str,
+        default="results/orca/batch_size_orca_gpu.csv",
+        help="Path to ORCA GPU CIFAR-10 batch-size results.",
+    )
+    parser.add_argument(
+        "--batch-summary-output",
+        type=str,
+        default="results/batch_size_summary.csv",
+        help="Path to save CIFAR-10 batch-size summary CSV.",
+    )
+    parser.add_argument(
+        "--batch-train-runtime-figure",
+        type=str,
+        default="figures/batch_size_train_runtime.png",
+        help="Path to save CIFAR-10 batch-size train runtime figure.",
+    )
+    parser.add_argument(
+        "--batch-train-throughput-figure",
+        type=str,
+        default="figures/batch_size_train_throughput.png",
+        help="Path to save CIFAR-10 batch-size train throughput figure.",
+    )
+    parser.add_argument(
+        "--batch-test-accuracy-figure",
+        type=str,
+        default="figures/batch_size_test_accuracy.png",
+        help="Path to save CIFAR-10 batch-size test accuracy figure.",
+    )
+
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
 
-    if args.experiment == "matmul":
-        results = load_matmul_results(
-            local_path=Path(args.local_matmul),
-            orca_path=Path(args.orca_matmul),
-        )
+    if args.experiment in {"matmul", "all"}:
+        analyze_matmul(args)
 
-        summary = make_matmul_summary(results)
-
-        save_summary(summary, Path(args.summary_output))
-        plot_matmul_runtime(summary, Path(args.runtime_figure))
-        plot_matmul_speedup(summary, Path(args.speedup_figure))
-        print_matmul_takeaways(summary)
+    if args.experiment in {"batch_size", "all"}:
+        analyze_batch_size(args)
 
 
 if __name__ == "__main__":
