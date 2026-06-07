@@ -1,6 +1,6 @@
 # GPU Acceleration for Deep Neural Networks
 
-This repository contains the code, benchmark results, figures, notes, and presentation materials for a DS2 final teaching project on GPU acceleration for deep learning.
+This repository contains the code, benchmark results, generated figures, documentation, and presentation materials for a DS2 final project on GPU acceleration for deep learning.
 
 ## Project Title
 
@@ -8,15 +8,18 @@ This repository contains the code, benchmark results, figures, notes, and presen
 
 ## Overview
 
-This project studies when GPUs accelerate deep-learning computations and when the expected speedup may fail. The project connects mathematical deep-learning operations to practical PyTorch performance across local CPU, local GPU, and PSU ORCA cluster GPU settings.
+This project studies when GPUs accelerate deep-learning computations and when the expected speedup may fail. The project connects mathematical deep-learning operations to practical PyTorch performance across:
+
+- Local CPU
+- Local laptop GPU
+- PSU ORCA CPU/GPU resources
+- ORCA multi-GPU `nn.DataParallel`
 
 The central question is:
 
 **How do deep-learning tensor computations behave across local CPU, local GPU, and cluster GPU settings?**
 
-The project is designed for a graduate-level deep learning course and builds on course topics such as tensors, batched matrix multiplication, convolutional layers, computational graphs, backpropagation, autograd, PyTorch modules, mini-batch training, and GPU use in deep learning.
-
-The goal is not to give a broad survey of GPU architecture or CUDA programming. Instead, the project focuses on how the structure of tensor computations, device placement, batching, memory movement, and hardware scale affect the performance of deep-learning workloads.
+The project goal is not to give a broad survey of GPU architecture or CUDA programming. Instead, the project focuses on how tensor structure, device placement, batching, memory movement, vectorization, and hardware scale affect the performance of PyTorch deep-learning workloads.
 
 ## Central Claim
 
@@ -38,88 +41,58 @@ GPU acceleration may be reduced or eliminated when overhead dominates, especiall
 - Device-placement mistakes
 - Communication/synchronization overhead in multi-GPU settings
 
-## Course Connections
-
-This project connects GPU acceleration to several core ideas from the course:
-
-- Tensor operations and tensor shapes
-- Matrix multiplication
-- Batched linear layers
-- Convolutional layers
-- Mini-batch training
-- Computational graphs
-- Forward and backward passes
-- Backpropagation and autograd
-- PyTorch modules
-- PyTorch device placement
-- GPU use in modern deep learning
-
-A central theme is that deep learning computations are not only mathematical formulas. They are implemented as tensor operations, and the structure of those tensor operations strongly affects whether GPU acceleration is effective.
-
 ## Experiments
 
 The project includes five main experiments.
 
 1. **Matrix multiplication size sweep**  
-   Measures how runtime changes as matrix size increases for local CPU, local GPU, and ORCA GPU settings. This experiment illustrates the crossover point where GPU parallel throughput begins to outweigh overhead.
+   Measures CPU and GPU runtime as matrix size increases. This experiment illustrates the crossover point where GPU parallel throughput begins to outweigh overhead.
 
-2. **Batch size and neural-network throughput experiment**  
-   Measures how batch size affects runtime, throughput, and possibly accuracy for a small neural network. The main focus is computational performance, but accuracy may be included as a secondary observation because batch size can also affect optimization behavior.
+2. **CIFAR-10 batch size and neural-network throughput**  
+   Trains `ProjectCIFAR10CNN` on CIFAR-10 using several batch sizes. The experiment measures training runtime, throughput, final train accuracy, test runtime, and test accuracy across local and ORCA environments.
 
-3. **CPU-GPU transfer overhead experiment**  
-   Compares strategies such as moving data to the GPU once versus repeatedly transferring data inside a loop. This experiment demonstrates why memory movement can dominate runtime.
+3. **CPU-GPU transfer overhead**  
+   Compares repeated CPU-GPU transfers against keeping data on the GPU. This experiment shows how memory movement can dominate runtime.
 
 4. **Vectorized tensor operations versus Python loops**  
-   Compares vectorized PyTorch tensor operations with explicit Python loops. This experiment illustrates why GPU acceleration depends on expressing computations as tensor operations that can reach optimized backend kernels.
+   Compares vectorized PyTorch tensor operations with explicit Python scalar loops. This experiment illustrates why GPU acceleration depends on expressing computations as tensor operations that can reach optimized backend kernels.
 
-5. **Multi-GPU or `nn.DataParallel` extension**  
-   Studies or demonstrates the basic idea of splitting a batch across multiple GPUs. This extension is included as the multi-GPU component of the project. If full benchmark results are not available, the presentation explains the computation conceptually and discusses the expected communication and synchronization overhead.
+5. **Single GPU versus `nn.DataParallel`**  
+   Demonstrates how `nn.DataParallel` splits a mini-batch across multiple GPUs and benchmarks synthetic CIFAR-shaped forward and forward+backward workloads on one ORCA GPU versus four ORCA GPUs.
 
-The main comparison across the project is:
+## Key Outputs
 
-- Local CPU
-- Local laptop GPU
-- PSU ORCA cluster GPU
+The project includes:
 
-## ORCA Cluster Component
+- Python benchmark scripts in `src/`
+- ORCA Slurm job scripts in `scripts/`
+- Local benchmark results in `results/local/`
+- ORCA benchmark results in `results/orca/`
+- Summary CSV files in `results/`
+- Generated figures in `figures/`
+- Project documentation in `docs/`
+- Final presentation materials in `presentation/`
 
-This project includes a PSU ORCA cluster component. ORCA is used to compare local GPU performance with cluster GPU performance and to introduce the research-computing workflow needed to access GPU resources through a scheduler.
+Generated figures include:
 
-The ORCA component is part of the project. It supports the original GPU-acceleration teaching goal by adding:
+1. `figures/matmul_runtime.png`
+2. `figures/matmul_speedup.png`
+3. `figures/batch_size_train_runtime.png`
+4. `figures/batch_size_train_throughput.png`
+5. `figures/batch_size_test_accuracy.png`
+6. `figures/transfer_bad_vs_good.png`
+7. `figures/vectorization_runtime.png`
+8. `figures/vectorization_loop_ratio.png`
+9. `figures/dataparallel_runtime.png`
+10. `figures/dataparallel_speedup.png`
 
-- Cluster GPU benchmarking
-- Hardware comparison between local and research-computing environments
-- Practical exposure to scheduler-based GPU access
-- Discussion of the difference between requesting GPU hardware and writing PyTorch code that correctly uses the GPU
+Summary CSV files include:
 
-The multi-GPU extension is included as a project extension. If full multi-GPU benchmark results are not available, the extension is handled conceptually using the same device-placement and batching framework as the other experiments.
-
-## Expected Outputs
-
-The final project should include:
-
-- Python benchmark scripts
-- Local benchmark results
-- ORCA benchmark results
-- Generated figures
-- A final presentation
-- Speaker notes or a presentation script
-- Documentation explaining the project structure, experiments, and cluster workflow
-
-Expected figures include:
-
-1. Matrix multiplication runtime versus matrix size
-2. Matrix multiplication speedup versus matrix size
-3. Batch size versus examples per second
-4. Transfer-overhead comparison
-5. Vectorized tensor operation versus Python-loop runtime comparison
-6. Multi-GPU or DataParallel result or conceptual comparison
-
-Expected tables include:
-
-1. Hardware/software environment summary
-2. Experiment summary table
-3. Timing result summary table
+1. `results/matmul_summary.csv`
+2. `results/batch_size_summary.csv`
+3. `results/transfer_summary.csv`
+4. `results/vectorization_summary.csv`
+5. `results/dataparallel_summary.csv`
 
 ## Repository Structure
 
@@ -140,87 +113,96 @@ ds2-gpu-acceleration/
 ├── src/
 │   ├── check_environment.py             # Local/ORCA environment and GPU checks
 │   ├── timing_utils.py                  # Shared timing helpers
+│   ├── models.py                        # Small neural-network model used in benchmarks
 │   ├── benchmark_matmul.py              # Experiment 1: Matrix multiplication sweep
 │   ├── benchmark_batch_size.py          # Experiment 2: Batch size and throughput
 │   ├── benchmark_transfer.py            # Experiment 3: CPU-GPU transfer overhead
 │   ├── benchmark_vectorization.py       # Experiment 4: Vectorized tensors vs Python loops
 │   ├── benchmark_dataparallel.py        # Experiment 5: Multi-GPU/DataParallel extension
-│   ├── models.py                        # Small neural-network models used in benchmarks
-│   └── plot_results.py                  # Generate figures from benchmark CSV files
-│
-├── notebooks/
-│   ├── 00_environment_check.ipynb       # Notebook version of environment checks
-│   ├── 01_bonus_batch_size_ref.ipynb    # Reference from prior batch-size runtime/accuracy experiment
-│   └── 02_results_preview.ipynb         # Preview and inspection of benchmark results
+│   └── analyze_results.py               # Generate figures / tables from benchmark CSV files
 │
 ├── scripts/
-│   ├── run_local_all.ps1                # Run local benchmarks
 │   ├── orca_environment_job.sh          # ORCA environment-check Slurm job
 │   ├── orca_matmul_job.sh               # ORCA job for Experiment 1
-│   ├── orca_batch_size_job.sh           # ORCA job for Experiment 2
+│   ├── orca_batch_size_cpu_job.sh       # ORCA job for Experiment 2 on CPU
+│   ├── orca_batch_size_gpu_job.sh       # ORCA job for Experiment 2 on GPU
 │   ├── orca_transfer_job.sh             # ORCA job for Experiment 3
-│   ├── orca_vectorization_job.sh        # ORCA job for Experiment 4
+│   ├── orca_vectorization_cpu_job.sh    # ORCA job for Experiment 4 on CPU
+│   ├── orca_vectorization_gpu_job.sh    # ORCA job for Experiment 4 on GPU
 │   └── orca_dataparallel_job.sh         # ORCA job for Experiment 5
 │
 ├── results/
-│   ├── local/                           # Local CPU/GPU benchmark outputs
-│   └── orca/                            # ORCA benchmark outputs and job logs
+│   ├── matmul_summary.csv               # Combined results for Experiment 1
+│   ├── batch_size_summary.csv           # Combined results for Experiment 2
+│   ├── transfer_summary.csv             # Combined results for Experiment 3
+│   ├── vectorization_summary.csv        # Combined results for Experiment 4
+│   ├── dataparallel_summary.csv         # Combined results for Experiment 5
+│   ├── local/                           # Local benchmark outputs
+│   └── orca/                            # ORCA benchmark outputs
 │
-├── figures/                             # Generated plots for the presentation
+├── figures/
+│   └── *.png                            # Generated plots for the presentation
 │
 └── presentation/
-    ├── presentation_outline.md          # Working outline for the presentation
-    ├── speaker_notes.md                 # Speaker notes / presentation script
     └── final_slides.pptx                # Final slide deck
 ```
 
 ## Documentation
 
-Additional project details are organized in the `docs/` folder:
+Additional documentation is stored in `docs/`:
 
-- `docs/project_overview.md`: Project motivation, course connection, mathematical background, PyTorch device model, and broader computational context
-- `docs/experiment_plan.md`: Detailed experiment descriptions, timing methodology, expected figures, and expected tables
-- `docs/orca_notes.md`: ORCA cluster notes, environment setup notes, job workflow, and run records
+- `docs/project_overview.md`: Project motivation, course connection, mathematical background, and PyTorch GPU concepts
+- `docs/experiment_plan.md`: Final experiment settings, outputs, and main takeaways.
+- `docs/orca_notes.md`: ORCA workflow, SLURM scripts, cluster environment notes, and output file records
 - `docs/proposal/`: Accepted proposal documents
 
-Presentation materials are organized in the `presentation/` folder:
 
-- `presentation/presentation_outline.md`: Working outline for the 30-minute teaching presentation
-- `presentation/speaker_notes.md`: Speaker notes or presentation script
-- `presentation/final_slides.pptx`: Final slide deck
-## Running the Project
+## Running Locally
 
-The benchmark scripts are stored in `src/`.
+From the repository root, activate the local Python environment and run scripts directly. 
 
-The local Windows workflow uses:
+Examples:
 
 ```powershell
-scripts\run_local_all.ps1
+python src\check_environment.py --output results\local\environment_local.txt
+python src\benchmark_matmul.py --output results\local\matmul_local.csv
+python src\benchmark_batch_size.py --device cuda --download --output results\local\batch_size_local_gpu.csv
+python src\benchmark_transfer.py --output results\local\transfer_local.csv
+python src\benchmark_vectorization.py --device cuda --output results\local\vectorization_local_gpu.csv
+python src\analyze_results.py --experiment all
 ```
 
-The ORCA workflow uses Slurm job scripts in `scripts/`, such as:
+### Running on ORCA
 
+The ORCA workflow uses Slurm job scripts in `scripts/`.
+
+Examples:
 ```bash
 sbatch scripts/orca_environment_job.sh
 sbatch scripts/orca_matmul_job.sh
-sbatch scripts/orca_batch_size_job.sh
+sbatch scripts/orca_batch_size_gpu_job.sh
+sbatch scripts/orca_batch_size_cpu_job.sh
 sbatch scripts/orca_transfer_job.sh
-sbatch scripts/orca_vectorization_job.sh
+sbatch scripts/orca_vectorization_gpu_job.sh
+sbatch scripts/orca_vectorization_cpu_job.sh
 sbatch scripts/orca_dataparallel_job.sh
 ```
 
-The exact ORCA environment setup and job settings are documented in `docs/orca_notes.md`.
+The ORCA setup, output files, and interpretation notes are documented in `docs/orca_notes.md`.
 
-## Project Workflow
+## Regenerating Figures
 
-The project workflow is:
+After benchmark CSV files are present, regenerate all summary tables and figures with:
 
-1. Record local hardware/software environment information
-2. Run local CPU and local GPU benchmarks
-3. Run ORCA cluster GPU benchmarks
-4. Save benchmark outputs in `results/`
-5. Generate figures in `figures/`
-6. Compare local and ORCA results
-7. Build the final presentation and speaker notes in `presentation/`
+```powershell
+python src\analyze_results.py --experiment all
+```
 
-The repository is organized so that code, outputs, figures, documentation, and presentation materials can be reviewed together.
+Individual experiment figures can also be regenerated:
+```powershell
+python src\analyze_results.py --experiment matmul
+python src\analyze_results.py --experiment batch_size
+python src\analyze_results.py --experiment transfer
+python src\analyze_results.py --experiment vectorization
+python src\analyze_results.py --experiment dataparallel
+```
