@@ -1212,6 +1212,311 @@ def analyze_vectorization(args: argparse.Namespace) -> None:
 
 
 # ------------------------------------------------------------
+# Experiment 5: Single GPU versus DataParallel
+# ------------------------------------------------------------
+
+def load_dataparallel_results(path: Path) -> pd.DataFrame:
+    """Load ORCA DataParallel benchmark results."""
+    data = pd.read_csv(path)
+
+    required_columns = {
+        "experiment",
+        "batch_size",
+        "mode",
+        "timing_case",
+        "visible_cuda_devices",
+        "used_cuda_devices",
+        "device_ids",
+        "model",
+        "parameter_count",
+        "warmup",
+        "repeats",
+        "total_seconds",
+        "seconds_per_repeat",
+        "milliseconds_per_repeat",
+        "examples_per_second",
+    }
+
+    missing = required_columns.difference(data.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {sorted(missing)}")
+
+    return data
+
+
+def make_dataparallel_summary(results: pd.DataFrame) -> pd.DataFrame:
+    """Create DataParallel summary with speedup columns."""
+    summary = results.copy()
+
+    single = summary[summary["mode"] == "single_gpu"][
+        ["batch_size", "timing_case", "milliseconds_per_repeat", "examples_per_second"]
+    ].rename(
+        columns={
+            "milliseconds_per_repeat": "single_gpu_ms_per_repeat",
+            "examples_per_second": "single_gpu_examples_per_second",
+        }
+    )
+
+    parallel = summary[summary["mode"] == "dataparallel"][
+        ["batch_size", "timing_case", "milliseconds_per_repeat", "examples_per_second"]
+    ].rename(
+        columns={
+            "milliseconds_per_repeat": "dataparallel_ms_per_repeat",
+            "examples_per_second": "dataparallel_examples_per_second",
+        }
+    )
+
+    speedup = pd.merge(single, parallel, on=["batch_size", "timing_case"])
+    speedup["dataparallel_speedup"] = (
+        speedup["single_gpu_ms_per_repeat"]
+        / speedup["dataparallel_ms_per_repeat"]
+    )
+    speedup["throughput_speedup"] = (
+        speedup["dataparallel_examples_per_second"]
+        / speedup["single_gpu_examples_per_second"]
+    )
+
+    summary = pd.merge(
+        summary,
+        speedup[
+            [
+                "batch_size",
+                "timing_case",
+                "single_gpu_ms_per_repeat",
+                "dataparallel_ms_per_repeat",
+                "dataparallel_speedup",
+                "single_gpu_examples_per_second",
+                "dataparallel_examples_per_second",
+                "throughput_speedup",
+            ]
+        ],
+        on=["batch_size", "timing_case"],
+        how="left",
+    )
+
+    return summary.sort_values(by=["timing_case", "batch_size", "mode"])
+
+
+def plot_dataparallel_runtime(
+    summary: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Plot single-GPU and DataParallel runtime by batch size."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    mode_labels = {
+        "single_gpu": "Single ORCA GPU",
+        "dataparallel": "ORCA DataParallel (4 GPUs)",
+    }
+
+    mode_colors = {
+        "single_gpu": ORCA_LOOP_COLOR,
+        "dataparallel": ORCA_VECTOR_COLOR,
+    }
+
+    mode_markers = {
+        "single_gpu": "o",
+        "dataparallel": "s",
+    }
+
+    case_linestyles = {
+        "forward_only": "-",
+        "forward_backward": "--",
+    }
+
+    case_labels = {
+        "forward_only": "forward",
+        "forward_backward": "forward+backward",
+    }
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.0))
+
+    for timing_case in ["forward_only", "forward_backward"]:
+        for mode in ["single_gpu", "dataparallel"]:
+            subset = summary[
+                (summary["timing_case"] == timing_case)
+                & (summary["mode"] == mode)
+            ].sort_values("batch_size")
+
+            ax.plot(
+                subset["batch_size"],
+                subset["milliseconds_per_repeat"],
+                color=mode_colors[mode],
+                linestyle=case_linestyles[timing_case],
+                marker=mode_markers[mode],
+                linewidth=1.8,
+                markersize=5,
+                label=f"{mode_labels[mode]}: {case_labels[timing_case]}",
+            )
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+
+    ax.set_title(
+        "Single GPU vs. DataParallel Runtime",
+        fontsize=16,
+        fontweight="bold",
+        pad=12,
+    )
+    ax.set_xlabel(
+        "Batch size",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+    ax.set_ylabel(
+        "Time per repeat (ms, log scale)",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+
+    ax.tick_params(axis="both", labelsize=10)
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.55)
+    ax.legend(fontsize=9, framealpha=0.9)
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved DataParallel runtime figure to: {output_path}")
+
+
+def plot_dataparallel_speedup(
+    summary: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Plot DataParallel speedup over single GPU."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    speedup_data = summary[
+        summary["mode"] == "single_gpu"
+    ].copy()
+
+    case_linestyles = {
+        "forward_only": "-",
+        "forward_backward": "--",
+    }
+
+    case_markers = {
+        "forward_only": "o",
+        "forward_backward": "s",
+    }
+
+    case_labels = {
+        "forward_only": "Forward only",
+        "forward_backward": "Forward + backward",
+    }
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.0))
+
+    for timing_case in ["forward_only", "forward_backward"]:
+        subset = speedup_data[
+            speedup_data["timing_case"] == timing_case
+        ].sort_values("batch_size")
+
+        ax.plot(
+            subset["batch_size"],
+            subset["dataparallel_speedup"],
+            color=ORCA_VECTOR_COLOR if timing_case == "forward_only" else ORCA_LOOP_COLOR,
+            linestyle=case_linestyles[timing_case],
+            marker=case_markers[timing_case],
+            linewidth=2.0,
+            markersize=5.5,
+            label=case_labels[timing_case],
+        )
+
+    ax.axhline(
+        1.0,
+        color=REFERENCE_COLOR,
+        linestyle="--",
+        linewidth=1,
+        label="Speedup = 1",
+    )
+
+    ax.set_xscale("log")
+
+    ax.set_title(
+        "DataParallel Speedup over Single GPU",
+        fontsize=16,
+        fontweight="bold",
+        pad=12,
+    )
+    ax.set_xlabel(
+        "Batch size",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+    ax.set_ylabel(
+        "Speedup = single-GPU time / DataParallel time",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+
+    ax.tick_params(axis="both", labelsize=10)
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.55)
+    ax.legend(fontsize=10, framealpha=0.9)
+
+    ax.text(
+        135,
+        1.08,
+        "Above 1: DataParallel faster",
+        fontsize=9.5,
+    )
+    ax.text(
+        135,
+        0.55,
+        "Below 1: Single GPU faster",
+        fontsize=9.5,
+    )
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved DataParallel speedup figure to: {output_path}")
+
+
+def print_dataparallel_takeaways(summary: pd.DataFrame) -> None:
+    """Print DataParallel interpretation values."""
+    print("\nDataParallel takeaways")
+    print("-" * 60)
+
+    speedup_data = summary[summary["mode"] == "single_gpu"].copy()
+
+    for timing_case in ["forward_only", "forward_backward"]:
+        subset = speedup_data[
+            speedup_data["timing_case"] == timing_case
+        ].sort_values("batch_size")
+
+        smallest = subset.iloc[0]
+        largest = subset.iloc[-1]
+
+        print(f"{timing_case}:")
+        print(
+            f"  batch {int(smallest['batch_size'])}: "
+            f"speedup = {smallest['dataparallel_speedup']:.2f}x"
+        )
+        print(
+            f"  batch {int(largest['batch_size'])}: "
+            f"speedup = {largest['dataparallel_speedup']:.2f}x"
+        )
+
+
+def analyze_dataparallel(args: argparse.Namespace) -> None:
+    """Run DataParallel analysis."""
+    results = load_dataparallel_results(Path(args.dataparallel_results))
+    summary = make_dataparallel_summary(results)
+
+    save_summary(summary, Path(args.dataparallel_summary_output))
+    plot_dataparallel_runtime(summary, Path(args.dataparallel_runtime_figure))
+    plot_dataparallel_speedup(summary, Path(args.dataparallel_speedup_figure))
+    print_dataparallel_takeaways(summary)
+
+
+# ------------------------------------------------------------
 # Argument parsing and main
 # ------------------------------------------------------------
 
@@ -1224,7 +1529,7 @@ def parse_args() -> argparse.Namespace:
         "--experiment",
         type=str,
         default="all",
-        choices=["matmul", "batch_size", "transfer", "vectorization", "all"],
+        choices=["matmul", "batch_size", "transfer", "vectorization", "dataparallel", "all"],
         help="Experiment results to analyze.",
     )
 
@@ -1384,6 +1689,34 @@ def parse_args() -> argparse.Namespace:
         help="Path to save vectorization loop-ratio figure.",
     )
 
+
+        # Experiment 5 paths.
+    parser.add_argument(
+        "--dataparallel-results",
+        type=str,
+        default="results/orca/dataparallel_orca.csv",
+        help="Path to ORCA DataParallel results.",
+    )
+    parser.add_argument(
+        "--dataparallel-summary-output",
+        type=str,
+        default="results/dataparallel_summary.csv",
+        help="Path to save DataParallel summary CSV.",
+    )
+    parser.add_argument(
+        "--dataparallel-runtime-figure",
+        type=str,
+        default="figures/dataparallel_runtime.png",
+        help="Path to save DataParallel runtime figure.",
+    )
+    parser.add_argument(
+        "--dataparallel-speedup-figure",
+        type=str,
+        default="figures/dataparallel_speedup.png",
+        help="Path to save DataParallel speedup figure.",
+    )
+
+
     return parser.parse_args()
 
 
@@ -1401,6 +1734,9 @@ def main() -> None:
 
     if args.experiment in {"vectorization", "all"}:
         analyze_vectorization(args)
+
+    if args.experiment in {"dataparallel", "all"}:
+        analyze_dataparallel(args)
 
 if __name__ == "__main__":
     main()
