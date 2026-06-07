@@ -19,7 +19,7 @@ source ~/ds2-gpu-env/bin/activate
 
 python src/benchmark_dataparallel.py \
     --output results/orca/dataparallel_orca.csv \
-    --batch-sizes 128 256 512 1024 2048 \
+    --batch-sizes 128 256 512 1024 2048 4096 \
     --warmup 5 \
     --repeats 20 \
     --timing-cases forward_only forward_backward \
