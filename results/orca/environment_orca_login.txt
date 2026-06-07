@@ -1,0 +1,26 @@
+================================================================================
+DS2 GPU Acceleration Project: Environment Check
+================================================================================
+Report mode: brief
+
+System Information
+--------------------------------------------------------------------------------
+Python executable: python
+Python version:    3.9.25 (main, Apr 17 2026, 00:00:00)  [GCC 11.5.0 20240719 (Red Hat 11.5.0-11)]
+Platform:          Linux-5.14.0-611.55.1.el9_7.0.3.x86_64-x86_64-with-glibc2.34
+Processor:         x86_64
+
+PyTorch Information
+--------------------------------------------------------------------------------
+PyTorch version:          2.5.1+cu121
+CUDA available:           False
+CUDA version in PyTorch:  12.1
+cuDNN version:            90100
+
+CUDA Device Information
+--------------------------------------------------------------------------------
+No CUDA device available to PyTorch.
+
+nvidia-smi
+--------------------------------------------------------------------------------
+Command not found: nvidia-smi --query-gpu=name,driver_version,memory.total,temperature.gpu,power.limit --format=csv

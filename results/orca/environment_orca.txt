@@ -1,0 +1,33 @@
+================================================================================
+DS2 GPU Acceleration Project: Environment Check
+================================================================================
+Report mode: brief
+
+System Information
+--------------------------------------------------------------------------------
+Python executable: python
+Python version:    3.9.25 (main, Apr 17 2026, 00:00:00)  [GCC 11.5.0 20240719 (Red Hat 11.5.0-11)]
+Platform:          Linux-5.14.0-611.55.1.el9_7.0.3.x86_64-x86_64-with-glibc2.34
+Processor:         x86_64
+
+PyTorch Information
+--------------------------------------------------------------------------------
+PyTorch version:          2.5.1+cu121
+CUDA available:           True
+CUDA version in PyTorch:  12.1
+cuDNN version:            90100
+
+CUDA Device Information
+--------------------------------------------------------------------------------
+CUDA device count: 1
+
+Device 0
+  Name:                     NVIDIA L40S
+  Total memory:             44.64 GB
+  Multiprocessor count:     142
+  Compute capability:       8.9
+
+nvidia-smi
+--------------------------------------------------------------------------------
+name, driver_version, memory.total [MiB], temperature.gpu, power.limit [W]
+NVIDIA L40S, 610.43.02, 46068 MiB, 24, 350.00 W
