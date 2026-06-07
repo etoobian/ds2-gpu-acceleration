@@ -723,6 +723,183 @@ def analyze_batch_size(args: argparse.Namespace) -> None:
 
 
 # ------------------------------------------------------------
+# Experiment 3: CPU-GPU transfer overhead
+# ------------------------------------------------------------
+
+def load_transfer_results(local_path: Path, orca_path: Path) -> pd.DataFrame:
+    """Load local and ORCA CPU-GPU transfer-overhead benchmark results."""
+    local = pd.read_csv(local_path)
+    local["environment"] = "local"
+
+    orca = pd.read_csv(orca_path)
+    orca["environment"] = "orca"
+
+    combined = pd.concat([local, orca], ignore_index=True)
+
+    required_columns = {
+        "experiment",
+        "n",
+        "tensor_size_mb",
+        "device",
+        "dtype",
+        "case",
+        "repeats",
+        "total_seconds",
+        "seconds_per_repeat",
+        "environment",
+    }
+
+    missing = required_columns.difference(combined.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {sorted(missing)}")
+
+    combined["milliseconds_per_repeat"] = 1000.0 * combined["seconds_per_repeat"]
+
+    return combined
+
+
+def make_transfer_summary(results: pd.DataFrame) -> pd.DataFrame:
+    """Create a summary table for CPU-GPU transfer-overhead results."""
+    summary = results.copy()
+
+    bad = summary[summary["case"] == "bad_repeated_transfer"][
+        ["environment", "n", "milliseconds_per_repeat"]
+    ].rename(columns={"milliseconds_per_repeat": "bad_ms_per_repeat"})
+
+    good = summary[summary["case"] == "good_keep_on_gpu"][
+        ["environment", "n", "milliseconds_per_repeat"]
+    ].rename(columns={"milliseconds_per_repeat": "good_ms_per_repeat"})
+
+    ratio = pd.merge(bad, good, on=["environment", "n"])
+    ratio["bad_over_good_ratio"] = (
+        ratio["bad_ms_per_repeat"] / ratio["good_ms_per_repeat"]
+    )
+
+    summary = pd.merge(
+        summary,
+        ratio[["environment", "n", "bad_over_good_ratio"]],
+        on=["environment", "n"],
+        how="left",
+    )
+
+    return summary.sort_values(by=["environment", "n", "case"])
+
+
+def plot_transfer_bad_vs_good(summary: pd.DataFrame, output_path: Path) -> None:
+    """Plot bad repeated transfer versus good keep-on-GPU pattern."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    plot_cases = ["bad_repeated_transfer", "good_keep_on_gpu"]
+
+    case_labels = {
+        "bad_repeated_transfer": "Bad - Transfer every iteration",
+        "good_keep_on_gpu": "Good - Keep data on GPU",
+    }
+
+    case_markers = {
+        "bad_repeated_transfer": "s",
+        "good_keep_on_gpu": "o",
+    }
+
+    case_linestyles = {
+        "bad_repeated_transfer": "--",
+        "good_keep_on_gpu": "-",
+    }
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.0))
+
+    for environment in ["local", "orca"]:
+        for case in plot_cases:
+            subset = summary[
+                (summary["environment"] == environment)
+                & (summary["case"] == case)
+            ].sort_values("tensor_size_mb")
+
+            label_env = "Local" if environment == "local" else "ORCA"
+            label = f"{label_env}: {case_labels[case]}"
+
+            ax.plot(
+                subset["tensor_size_mb"],
+                subset["milliseconds_per_repeat"],
+                color=environment_color(environment),
+                linestyle=case_linestyles[case],
+                marker=case_markers[case],
+                linewidth=1.8,
+                markersize=5,
+                label=label,
+            )
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+
+    ax.set_title(
+        "CPU-GPU Transfer Overhead",
+        fontsize=16,
+        fontweight="bold",
+        pad=12,
+    )
+    ax.set_xlabel(
+        "Tensor size (MB, log scale)",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+    ax.set_ylabel(
+        "Time per repeat (ms, log scale)",
+        fontsize=11,
+        fontweight="bold",
+        labelpad=8,
+    )
+
+    ax.tick_params(axis="both", labelsize=10)
+    ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.55)
+    ax.legend(fontsize=9, framealpha=0.9)
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved transfer bad-vs-good figure to: {output_path}")
+
+
+def print_transfer_takeaways(summary: pd.DataFrame) -> None:
+    """Print transfer-overhead interpretation values."""
+    print("\nCPU-GPU transfer-overhead takeaways")
+    print("-" * 60)
+
+    for environment in ["local", "orca"]:
+        subset = summary[
+            (summary["environment"] == environment)
+            & (summary["case"] == "bad_repeated_transfer")
+        ].sort_values("tensor_size_mb")
+
+        largest = subset.iloc[-1]
+        env_label = "Local" if environment == "local" else "ORCA"
+
+        print(
+            f"{env_label}, largest tensor "
+            f"({largest['tensor_size_mb']:.2f} MB):"
+        )
+        print(
+            f"  bad/good ratio = {largest['bad_over_good_ratio']:.2f}x"
+        )
+
+
+def analyze_transfer(args: argparse.Namespace) -> None:
+    """Run CPU-GPU transfer-overhead analysis."""
+    results = load_transfer_results(
+        local_path=Path(args.local_transfer),
+        orca_path=Path(args.orca_transfer),
+    )
+
+    summary = make_transfer_summary(results)
+
+    save_summary(summary, Path(args.transfer_summary_output))
+    plot_transfer_bad_vs_good(summary, Path(args.transfer_bad_good_figure))
+    print_transfer_takeaways(summary)
+
+
+# ------------------------------------------------------------
 # Argument parsing and main
 # ------------------------------------------------------------
 
@@ -735,7 +912,7 @@ def parse_args() -> argparse.Namespace:
         "--experiment",
         type=str,
         default="all",
-        choices=["matmul", "batch_size", "all"],
+        choices=["matmul", "batch_size", "transfer", "all"],
         help="Experiment results to analyze.",
     )
 
@@ -821,6 +998,32 @@ def parse_args() -> argparse.Namespace:
         help="Path to save CIFAR-10 batch-size test accuracy figure.",
     )
 
+    # Experiment 3 paths.
+    parser.add_argument(
+        "--local-transfer",
+        type=str,
+        default="results/local/transfer_local.csv",
+        help="Path to local transfer-overhead results.",
+    )
+    parser.add_argument(
+        "--orca-transfer",
+        type=str,
+        default="results/orca/transfer_orca.csv",
+        help="Path to ORCA transfer-overhead results.",
+    )
+    parser.add_argument(
+        "--transfer-summary-output",
+        type=str,
+        default="results/transfer_summary.csv",
+        help="Path to save transfer-overhead summary CSV.",
+    )
+    parser.add_argument(
+        "--transfer-bad-good-figure",
+        type=str,
+        default="figures/transfer_bad_vs_good.png",
+        help="Path to save bad-vs-good transfer-overhead figure.",
+    )
+
     return parser.parse_args()
 
 
@@ -833,6 +1036,8 @@ def main() -> None:
     if args.experiment in {"batch_size", "all"}:
         analyze_batch_size(args)
 
+    if args.experiment in {"transfer", "all"}:
+        analyze_transfer(args)
 
 if __name__ == "__main__":
     main()
